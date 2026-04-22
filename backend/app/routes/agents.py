@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.run import RunRequest, RunResponse
-from app.services.memory_service import get_project
+from app.services.memory_service import get_project, list_runs
 from app.services.orchestrator import run_agents
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -18,3 +18,8 @@ def run_agents_endpoint(run_request: RunRequest) -> RunResponse:
         objective=run_request.objective,
     )
     return RunResponse(**result)
+
+
+@router.get("/runs", response_model=list[RunResponse])
+def list_runs_endpoint(project_id: str | None = None) -> list[RunResponse]:
+    return [RunResponse(**run) for run in list_runs(project_id=project_id)]
