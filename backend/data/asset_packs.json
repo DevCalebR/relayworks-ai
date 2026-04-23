@@ -1,0 +1,198 @@
+[
+  {
+    "project_id": "proj_952a38d1f320",
+    "launch_plan_id": "lp_a97e9dd44094",
+    "source_run_id": "run_3a261dd6f555",
+    "headline": "Turn lost deals into the next quarter's revenue plays",
+    "one_sentence_pitch": "AI Win-Loss Interview Analyzer helps Seed to Series B SaaS teams capture structured buyer feedback, spot the real reasons deals stall or churn, and turn those signals into sharper revenue decisions.",
+    "landing_page_hero": "Know why deals are won, lost, or stuck before the quarter slips",
+    "landing_page_subheadline": "AI-backed win-loss interview research with weekly decision briefs. for Seed to Series B SaaS teams that need practical win-loss insight without waiting on a full BI project.",
+    "key_benefits": [
+      "Surface the top loss reasons, buyer objections, and message gaps across active deals.",
+      "Give revenue leaders a weekly brief they can use in pipeline reviews and forecast calls.",
+      "Help sales ops turn scattered notes, call summaries, and CRM data into one repeatable signal."
+    ],
+    "offer_stack": [
+      "Win-loss interview analysis across recent closed-lost and stalled deals.",
+      "Weekly decision brief with ranked themes, objection patterns, and recommended actions.",
+      "Leadership readout tailored for sales, product marketing, and revenue operations."
+    ],
+    "call_to_action": "Book a 20-minute working session to review three recent lost deals.",
+    "cold_outreach_email_subject": "Quick way to find why deals are slipping",
+    "cold_outreach_email_body": "Hi {first_name},\n\nI help seed to series b saas teams turn call notes, CRM history, and interview feedback into a weekly win-loss brief that shows why deals are lost, delayed, or discounted.\n\nFor teams running into issues like revenue teams lose structured deal feedback and cannot quickly isolate churn and pipeline blockers., the goal is simple: give revenue leaders a clear view of the patterns they can fix this quarter, without waiting on a heavy analytics project.\n\nIf useful, I can walk you through what the first pilot would cover and the exact output your team would get.\n\nOpen to a short call next week?",
+    "linkedin_dm": "Working on a practical way for SaaS revenue teams to turn win-loss interviews, call notes, and CRM context into a weekly brief on why deals are really moving or dying. If this is a priority for your team, I can share the pilot structure.",
+    "discovery_call_script": [
+      "How are you currently learning why deals are won, lost, or slipping late in the cycle?",
+      "Where does feedback live today: CRM fields, call notes, Gong summaries, manager reviews, or interviews?",
+      "Which decisions would improve fastest if your team had cleaner win-loss signal every week?",
+      "How are revenue leadership and sales ops measuring whether messaging or process changes are working?",
+      "If we ran a 30-day pilot, what outcome would make it worth expanding?"
+    ],
+    "pilot_offer": "30-day pilot covering one segment of recent closed-lost and late-stage stalled deals, including interview analysis, weekly decision briefs, and a final leadership readout.",
+    "pricing_blurb": "Start with a paid pilot tied to a defined deal sample and weekly executive output, then roll into monthly retainer with onboarding fee. once the team wants ongoing coverage.",
+    "faq": [
+      {
+        "question": "Who is this for?",
+        "answer": "Revenue leaders and sales operations teams at Seed to Series B SaaS companies that need a clearer view of why deals are won or lost."
+      },
+      {
+        "question": "What do we need to provide?",
+        "answer": "A small set of recent deals, call notes or summaries, and access to the context your team already uses for pipeline reviews."
+      },
+      {
+        "question": "What does the pilot produce?",
+        "answer": "A weekly brief with ranked themes, buyer objections, loss reasons, and concrete actions for revenue leadership."
+      }
+    ],
+    "created_at": "2026-04-23T14:26:07.142478+00:00",
+    "generation_mode": "fallback",
+    "id": "asset_ab03f4793bdc"
+  },
+  {
+    "project_id": "proj_952a38d1f320",
+    "launch_plan_id": "lp_a97e9dd44094",
+    "source_run_id": "run_3a261dd6f555",
+    "headline": "Turn lost deals into the next quarter's revenue plays",
+    "one_sentence_pitch": "AI Win-Loss Interview Analyzer helps Seed to Series B SaaS teams capture structured buyer feedback, spot the real reasons deals stall or churn, and turn those signals into sharper revenue decisions.",
+    "landing_page_hero": "Know why deals are won, lost, or stuck before the quarter slips",
+    "landing_page_subheadline": "AI-backed win-loss interview research with weekly decision briefs. for Seed to Series B SaaS teams that need practical win-loss insight without waiting on a full BI project.",
+    "key_benefits": [
+      "Surface the top loss reasons, buyer objections, and message gaps across active deals.",
+      "Give revenue leaders a weekly brief they can use in pipeline reviews and forecast calls.",
+      "Help sales ops turn scattered notes, call summaries, and CRM data into one repeatable signal."
+    ],
+    "offer_stack": [
+      "Win-loss interview analysis across recent closed-lost and stalled deals.",
+      "Weekly decision brief with ranked themes, objection patterns, and recommended actions.",
+      "Leadership readout tailored for sales, product marketing, and revenue operations."
+    ],
+    "call_to_action": "Book a 20-minute working session to review three recent lost deals.",
+    "cold_outreach_email_subject": "Quick way to find why deals are slipping",
+    "cold_outreach_email_body": "Hi {first_name},\n\nI help seed to series b saas teams turn call notes, CRM history, and interview feedback into a weekly win-loss brief that shows why deals are lost, delayed, or discounted.\n\nFor teams running into issues like revenue teams lose structured deal feedback and cannot quickly isolate churn and pipeline blockers., the goal is simple: give revenue leaders a clear view of the patterns they can fix this quarter, without waiting on a heavy analytics project.\n\nIf useful, I can walk you through what the first pilot would cover and the exact output your team would get.\n\nOpen to a short call next week?",
+    "linkedin_dm": "Working on a practical way for SaaS revenue teams to turn win-loss interviews, call notes, and CRM context into a weekly brief on why deals are really moving or dying. If this is a priority for your team, I can share the pilot structure.",
+    "discovery_call_script": [
+      "How are you currently learning why deals are won, lost, or slipping late in the cycle?",
+      "Where does feedback live today: CRM fields, call notes, Gong summaries, manager reviews, or interviews?",
+      "Which decisions would improve fastest if your team had cleaner win-loss signal every week?",
+      "How are revenue leadership and sales ops measuring whether messaging or process changes are working?",
+      "If we ran a 30-day pilot, what outcome would make it worth expanding?"
+    ],
+    "pilot_offer": "30-day pilot covering one segment of recent closed-lost and late-stage stalled deals, including interview analysis, weekly decision briefs, and a final leadership readout.",
+    "pricing_blurb": "Start with a paid pilot tied to a defined deal sample and weekly executive output, then roll into monthly retainer with onboarding fee. once the team wants ongoing coverage.",
+    "faq": [
+      {
+        "question": "Who is this for?",
+        "answer": "Revenue leaders and sales operations teams at Seed to Series B SaaS companies that need a clearer view of why deals are won or lost."
+      },
+      {
+        "question": "What do we need to provide?",
+        "answer": "A small set of recent deals, call notes or summaries, and access to the context your team already uses for pipeline reviews."
+      },
+      {
+        "question": "What does the pilot produce?",
+        "answer": "A weekly brief with ranked themes, buyer objections, loss reasons, and concrete actions for revenue leadership."
+      }
+    ],
+    "created_at": "2026-04-23T14:26:11.176603+00:00",
+    "generation_mode": "fallback",
+    "id": "asset_08a0408b4a5b"
+  },
+  {
+    "project_id": "proj_952a38d1f320",
+    "launch_plan_id": "lp_a97e9dd44094",
+    "source_run_id": "run_3a261dd6f555",
+    "headline": "Turn lost deals into the next quarter's revenue plays",
+    "one_sentence_pitch": "AI Win-Loss Interview Analyzer helps Seed to Series B SaaS teams capture structured buyer feedback, spot the real reasons deals stall or churn, and turn those signals into sharper revenue decisions.",
+    "landing_page_hero": "Know why deals are won, lost, or stuck before the quarter slips",
+    "landing_page_subheadline": "AI-backed win-loss interview research with weekly decision briefs for Seed to Series B SaaS teams that need practical win-loss insight without waiting on a full BI project.",
+    "key_benefits": [
+      "Surface the top loss reasons, buyer objections, and message gaps across active deals.",
+      "Give revenue leaders a weekly brief they can use in pipeline reviews and forecast calls.",
+      "Help sales ops turn scattered notes, call summaries, and CRM data into one repeatable signal."
+    ],
+    "offer_stack": [
+      "Win-loss interview analysis across recent closed-lost and stalled deals.",
+      "Weekly decision brief with ranked themes, objection patterns, and recommended actions.",
+      "Leadership readout tailored for sales, product marketing, and revenue operations."
+    ],
+    "call_to_action": "Book a 20-minute working session to review three recent lost deals.",
+    "cold_outreach_email_subject": "Quick way to find why deals are slipping",
+    "cold_outreach_email_body": "Hi {first_name},\n\nI help Seed to Series B SaaS teams turn call notes, CRM history, and interview feedback into a weekly win-loss brief that shows why deals are lost, delayed, or discounted.\n\nFor teams dealing with a familiar problem, revenue teams lose structured deal feedback and cannot quickly isolate churn and pipeline blockers, the goal is simple: give revenue leaders a clear view of the patterns they can fix this quarter, without waiting on a heavy analytics project.\n\nIf useful, I can walk you through what the first pilot would cover and the exact output your team would get.\n\nOpen to a short call next week?",
+    "linkedin_dm": "Working on a practical way for SaaS revenue teams to turn win-loss interviews, call notes, and CRM context into a weekly brief on why deals are really moving or dying. If this is a priority for your team, I can share the pilot structure.",
+    "discovery_call_script": [
+      "How are you currently learning why deals are won, lost, or slipping late in the cycle?",
+      "Where does feedback live today: CRM fields, call notes, Gong summaries, manager reviews, or interviews?",
+      "Which decisions would improve fastest if your team had cleaner win-loss signal every week?",
+      "How are revenue leadership and sales ops measuring whether messaging or process changes are working?",
+      "If we ran a 30-day pilot, what outcome would make it worth expanding?"
+    ],
+    "pilot_offer": "30-day pilot covering one segment of recent closed-lost and late-stage stalled deals, including interview analysis, weekly decision briefs, and a final leadership readout.",
+    "pricing_blurb": "Start with a paid pilot tied to a defined deal sample and weekly executive output, then roll into monthly retainer with onboarding fee once the team wants ongoing coverage.",
+    "faq": [
+      {
+        "question": "Who is this for?",
+        "answer": "Revenue leaders and sales operations teams at Seed to Series B SaaS companies that need a clearer view of why deals are won or lost."
+      },
+      {
+        "question": "What do we need to provide?",
+        "answer": "A small set of recent deals, call notes or summaries, and access to the context your team already uses for pipeline reviews."
+      },
+      {
+        "question": "What does the pilot produce?",
+        "answer": "A weekly brief with ranked themes, buyer objections, loss reasons, and concrete actions for revenue leadership."
+      }
+    ],
+    "created_at": "2026-04-23T14:27:39.868597+00:00",
+    "generation_mode": "fallback",
+    "id": "asset_bdc408ebc2f0"
+  },
+  {
+    "project_id": "proj_952a38d1f320",
+    "launch_plan_id": "lp_a97e9dd44094",
+    "source_run_id": "run_3a261dd6f555",
+    "headline": "Turn lost deals into the next quarter's revenue plays",
+    "one_sentence_pitch": "AI Win-Loss Interview Analyzer helps Seed to Series B SaaS teams capture structured buyer feedback, spot the real reasons deals stall or churn, and turn those signals into sharper revenue decisions.",
+    "landing_page_hero": "Know why deals are won, lost, or stuck before the quarter slips",
+    "landing_page_subheadline": "AI-backed win-loss interview research with weekly decision briefs for Seed to Series B SaaS teams that need practical win-loss insight without waiting on a full BI project.",
+    "key_benefits": [
+      "Surface the top loss reasons, buyer objections, and message gaps across active deals.",
+      "Give revenue leaders a weekly brief they can use in pipeline reviews and forecast calls.",
+      "Help sales ops turn scattered notes, call summaries, and CRM data into one repeatable signal."
+    ],
+    "offer_stack": [
+      "Win-loss interview analysis across recent closed-lost and stalled deals.",
+      "Weekly decision brief with ranked themes, objection patterns, and recommended actions.",
+      "Leadership readout tailored for sales, product marketing, and revenue operations."
+    ],
+    "call_to_action": "Book a 20-minute working session to review three recent lost deals.",
+    "cold_outreach_email_subject": "Quick way to find why deals are slipping",
+    "cold_outreach_email_body": "Hi {first_name},\n\nI help Seed to Series B SaaS teams turn call notes, CRM history, and interview feedback into a weekly win-loss brief that shows why deals are lost, delayed, or discounted.\n\nFor teams dealing with a familiar problem, revenue teams lose structured deal feedback and cannot quickly isolate churn and pipeline blockers, the goal is simple: give revenue leaders a clear view of the patterns they can fix this quarter, without waiting on a heavy analytics project.\n\nIf useful, I can walk you through what the first pilot would cover and the exact output your team would get.\n\nOpen to a short call next week?",
+    "linkedin_dm": "Working on a practical way for SaaS revenue teams to turn win-loss interviews, call notes, and CRM context into a weekly brief on why deals are really moving or dying. If this is a priority for your team, I can share the pilot structure.",
+    "discovery_call_script": [
+      "How are you currently learning why deals are won, lost, or slipping late in the cycle?",
+      "Where does feedback live today: CRM fields, call notes, Gong summaries, manager reviews, or interviews?",
+      "Which decisions would improve fastest if your team had cleaner win-loss signal every week?",
+      "How are revenue leadership and sales ops measuring whether messaging or process changes are working?",
+      "If we ran a 30-day pilot, what outcome would make it worth expanding?"
+    ],
+    "pilot_offer": "30-day pilot covering one segment of recent closed-lost and late-stage stalled deals, including interview analysis, weekly decision briefs, and a final leadership readout.",
+    "pricing_blurb": "Start with a paid pilot tied to a defined deal sample and weekly executive output, then roll into monthly retainer with onboarding fee once the team wants ongoing coverage.",
+    "faq": [
+      {
+        "question": "Who is this for?",
+        "answer": "Revenue leaders and sales operations teams at Seed to Series B SaaS companies that need a clearer view of why deals are won or lost."
+      },
+      {
+        "question": "What do we need to provide?",
+        "answer": "A small set of recent deals, call notes or summaries, and access to the context your team already uses for pipeline reviews."
+      },
+      {
+        "question": "What does the pilot produce?",
+        "answer": "A weekly brief with ranked themes, buyer objections, loss reasons, and concrete actions for revenue leadership."
+      }
+    ],
+    "created_at": "2026-04-23T14:27:39.877840+00:00",
+    "generation_mode": "fallback",
+    "id": "asset_49e8dfa5cd5d"
+  }
+]

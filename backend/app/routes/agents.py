@@ -1,15 +1,20 @@
 from fastapi import APIRouter, HTTPException
 
+from app.schemas.asset_pack import AssetPackRequest, AssetPackResponse
 from app.schemas.launch_plan import LaunchPlanRequest, LaunchPlanResponse
 from app.schemas.run import CompareResponse, OperatorMode, RunRequest, RunResponse
+from app.services.asset_pack_agent import generate_asset_pack
 from app.services.launch_plan_agent import generate_launch_plan
 from app.services.memory_service import (
     compare_best_runs,
+    create_asset_pack_record,
     create_launch_plan_record,
     get_project,
+    list_asset_packs,
     list_launch_plans,
     list_runs,
     resolve_launch_plan_source,
+    resolve_stored_launch_plan,
 )
 from app.services.orchestrator import run_agents
 
@@ -86,4 +91,46 @@ def list_launch_plans_endpoint(
     return [
         LaunchPlanResponse(**launch_plan)
         for launch_plan in list_launch_plans(project_id=project_id, run_id=run_id)
+    ]
+
+
+@router.post("/asset-pack", response_model=AssetPackResponse)
+def asset_pack_endpoint(request: AssetPackRequest) -> AssetPackResponse:
+    project = get_project(request.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    launch_plan = resolve_stored_launch_plan(
+        project_id=request.project_id,
+        launch_plan_id=request.launch_plan_id,
+        use_latest_launch_plan=request.use_latest_launch_plan,
+    )
+    if launch_plan is None:
+        if request.launch_plan_id is None and not request.use_latest_launch_plan:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide launch_plan_id or set use_latest_launch_plan=true.",
+            )
+        if request.launch_plan_id is not None:
+            raise HTTPException(status_code=404, detail="Launch plan not found for project.")
+        raise HTTPException(status_code=404, detail="No launch plan found for project.")
+
+    asset_pack, generation_mode = generate_asset_pack(launch_plan=launch_plan)
+    saved_asset_pack = create_asset_pack_record(
+        {**asset_pack, "generation_mode": generation_mode}
+    )
+    return AssetPackResponse(**saved_asset_pack)
+
+
+@router.get("/asset-packs", response_model=list[AssetPackResponse])
+def list_asset_packs_endpoint(
+    project_id: str | None = None,
+    launch_plan_id: str | None = None,
+) -> list[AssetPackResponse]:
+    return [
+        AssetPackResponse(**asset_pack)
+        for asset_pack in list_asset_packs(
+            project_id=project_id,
+            launch_plan_id=launch_plan_id,
+        )
     ]

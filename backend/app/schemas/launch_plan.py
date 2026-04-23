@@ -11,6 +11,7 @@ class LaunchPlanRequest(BaseModel):
 
 
 class LaunchPlanResponse(BaseModel):
+    id: str
     project_id: str
     source_run_id: str
     mode: OperatorMode = "research_operator"

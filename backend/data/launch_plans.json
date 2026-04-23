@@ -1,1 +1,66 @@
-[]
+[
+  {
+    "project_id": "proj_952a38d1f320",
+    "source_run_id": "run_3a261dd6f555",
+    "mode": "research_operator",
+    "selected_opportunity": {
+      "title": "AI Win-Loss Interview Analyzer",
+      "niche": "B2B Revenue Intelligence",
+      "target_customer": "Seed to Series B SaaS teams",
+      "core_problem": "Revenue teams lose structured deal feedback and cannot quickly isolate churn and pipeline blockers.",
+      "offer": "AI-backed win-loss interview research with weekly decision briefs.",
+      "mvp": "A lightweight service that ingests call notes and CRM records, then produces ranked loss reasons and buyer-pattern summaries.",
+      "distribution_channel": "Founder-led outbound to SaaS sales leaders.",
+      "monetization_model": "Monthly retainer with onboarding fee.",
+      "opportunity_score": 10,
+      "confidence_score": 9,
+      "reasoning": "The service can start manually assisted, delivers obvious revenue impact, and creates a clean bridge into a productized reporting workflow.",
+      "next_actions": [
+        "Interview five SaaS sales leaders about current win-loss workflows.",
+        "Collect three sample call-note datasets for a manual pilot.",
+        "Draft a one-page weekly decision brief format.",
+        "Package a founder-led pilot offer with a 14-day turnaround.",
+        "Define the metrics that prove deal and churn insight quality."
+      ]
+    },
+    "headline": "AI Win-Loss Interview Analyzer for Seed to Series B SaaS teams",
+    "ideal_customer_profile": "Seed to Series B SaaS teams with a visible budget and an urgent need to solve: Revenue teams lose structured deal feedback and cannot quickly isolate churn and pipeline blockers.",
+    "painful_problem_statement": "Revenue teams lose structured deal feedback and cannot quickly isolate churn and pipeline blockers.",
+    "offer_summary": "AI-backed win-loss interview research with weekly decision briefs.",
+    "mvp_scope": [
+      "Deliver the narrowest paid pilot around: A lightweight service that ingests call notes and CRM records, then produces ranked loss reasons and buyer-pattern summaries.",
+      "Set up a lightweight onboarding and reporting workflow.",
+      "Ship one repeatable weekly deliverable that proves ROI quickly."
+    ],
+    "pricing_hypothesis": "Monthly retainer with onboarding fee.",
+    "acquisition_channels": [
+      "Founder-led outbound to SaaS sales leaders"
+    ],
+    "sales_motion": "Run direct outreach to a tightly filtered list, pitch a paid pilot, and close 2 to 3 design partners before adding product complexity.",
+    "first_30_day_plan": [
+      "Week 1: define the pilot package, ICP list, and outreach assets.",
+      "Week 2: contact 30 qualified prospects and book discovery calls.",
+      "Week 3: onboard the first pilot customer and deliver the initial workflow manually.",
+      "Week 4: convert pilot feedback into a sharper offer and a repeatable case study."
+    ],
+    "success_metrics": [
+      "At least 10 qualified conversations with target buyers.",
+      "2 or more paid pilot customers within 30 days.",
+      "A clear ROI signal or repeat usage pattern from pilot accounts."
+    ],
+    "biggest_risks": [
+      "The pain is real but not urgent enough to trigger a purchase now.",
+      "Manual delivery takes too much effort before repeatability is proven.",
+      "Positioning is too broad to convert quickly in outbound."
+    ],
+    "mitigation_steps": [
+      "Narrow the offer to one painful use case and one buyer profile.",
+      "Run the first pilots manually to learn before automating more workflow.",
+      "Use weekly feedback loops to tighten messaging and pricing after each sales call."
+    ],
+    "launch_recommendation": "Launch immediately as a service-led paid pilot, keep the scope narrow, and only productize the workflow after 2 to 3 customers validate recurring demand.",
+    "created_at": "2026-04-23T14:25:56.628449+00:00",
+    "generation_mode": "fallback",
+    "id": "lp_a97e9dd44094"
+  }
+]

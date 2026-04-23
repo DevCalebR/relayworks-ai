@@ -16,6 +16,7 @@ if not DATA_DIR.is_absolute():
 PROJECTS_FILE = DATA_DIR / "projects.json"
 RUNS_FILE = DATA_DIR / "runs.json"
 LAUNCH_PLANS_FILE = DATA_DIR / "launch_plans.json"
+ASSET_PACKS_FILE = DATA_DIR / "asset_packs.json"
 
 
 def _write_json_file(path: Path, records: list[dict]) -> None:
@@ -111,9 +112,13 @@ def save_launch_plans(launch_plans: list[dict]) -> None:
 
 def create_launch_plan_record(launch_plan_data: dict) -> dict:
     launch_plans = load_launch_plans()
-    launch_plans.append(launch_plan_data)
+    record = {
+        **launch_plan_data,
+        "id": str(launch_plan_data.get("id") or f"lp_{uuid4().hex[:12]}"),
+    }
+    launch_plans.append(record)
     save_launch_plans(launch_plans)
-    return launch_plan_data
+    return record
 
 
 def list_launch_plans(project_id: str | None = None, run_id: str | None = None) -> list[dict]:
@@ -129,6 +134,75 @@ def list_launch_plans(project_id: str | None = None, run_id: str | None = None) 
             if launch_plan.get("source_run_id") == run_id
         ]
     return launch_plans
+
+
+def get_launch_plan_record(launch_plan_id: str, project_id: str | None = None) -> dict | None:
+    for launch_plan in list_launch_plans(project_id=project_id):
+        if launch_plan.get("id") == launch_plan_id:
+            return launch_plan
+    return None
+
+
+def get_latest_launch_plan(project_id: str) -> dict | None:
+    launch_plans = list_launch_plans(project_id=project_id)
+    if not launch_plans:
+        return None
+    return sorted(
+        launch_plans,
+        key=lambda launch_plan: str(launch_plan.get("created_at") or ""),
+        reverse=True,
+    )[0]
+
+
+def resolve_stored_launch_plan(
+    project_id: str,
+    launch_plan_id: str | None = None,
+    use_latest_launch_plan: bool = False,
+) -> dict | None:
+    if launch_plan_id is not None:
+        return get_launch_plan_record(launch_plan_id=launch_plan_id, project_id=project_id)
+
+    if use_latest_launch_plan:
+        return get_latest_launch_plan(project_id=project_id)
+
+    return None
+
+
+def load_asset_packs() -> list[dict]:
+    return _load_json_file(ASSET_PACKS_FILE)
+
+
+def save_asset_packs(asset_packs: list[dict]) -> None:
+    _write_json_file(ASSET_PACKS_FILE, asset_packs)
+
+
+def create_asset_pack_record(asset_pack_data: dict) -> dict:
+    asset_packs = load_asset_packs()
+    record = {
+        **asset_pack_data,
+        "id": str(asset_pack_data.get("id") or f"asset_{uuid4().hex[:12]}"),
+    }
+    asset_packs.append(record)
+    save_asset_packs(asset_packs)
+    return record
+
+
+def list_asset_packs(
+    project_id: str | None = None,
+    launch_plan_id: str | None = None,
+) -> list[dict]:
+    asset_packs = load_asset_packs()
+    if project_id is not None:
+        asset_packs = [
+            asset_pack for asset_pack in asset_packs if asset_pack.get("project_id") == project_id
+        ]
+    if launch_plan_id is not None:
+        asset_packs = [
+            asset_pack
+            for asset_pack in asset_packs
+            if asset_pack.get("launch_plan_id") == launch_plan_id
+        ]
+    return asset_packs
 
 
 def compare_best_runs(project_id: str, mode: str | None = None) -> dict:
