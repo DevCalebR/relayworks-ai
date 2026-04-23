@@ -32,6 +32,12 @@ class Opportunity(BaseModel):
     next_actions: list[str]
 
 
+class ComparedOpportunity(Opportunity):
+    run_id: str
+    mode: OperatorMode = "research_operator"
+    created_at: str
+
+
 class RunResponse(BaseModel):
     id: str
     project_id: str
@@ -55,3 +61,12 @@ class RunResponse(BaseModel):
     execution_output: str
     status: str
     created_at: str
+
+
+class CompareResponse(BaseModel):
+    project_id: str
+    total_runs: int
+    total_opportunities: int
+    message: str | None = None
+    top_opportunity: ComparedOpportunity | None = None
+    ranked_opportunities: list[ComparedOpportunity]

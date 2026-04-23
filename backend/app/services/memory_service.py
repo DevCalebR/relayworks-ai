@@ -6,6 +6,7 @@ from app.config import settings
 from app.models.project import Project
 from app.models.run import DEFAULT_MODE, RunResult
 from app.services.prompt_templates import OPERATOR_MODES, get_fallback_opportunities, get_mode_prompt
+from app.services.research_agent import sort_opportunities
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(settings.DATA_DIR)
@@ -92,6 +93,42 @@ def list_runs(project_id: str | None = None) -> list[dict]:
     return [run for run in runs if run.get("project_id") == project_id]
 
 
+def compare_best_runs(project_id: str, mode: str | None = None) -> dict:
+    runs = list_runs(project_id=project_id)
+    if mode is not None:
+        runs = [run for run in runs if run.get("mode") == mode]
+
+    ranked_opportunities = [
+        {
+            **run["best_opportunity"],
+            "run_id": run["id"],
+            "mode": run["mode"],
+            "created_at": run["created_at"],
+        }
+        for run in runs
+        if isinstance(run.get("best_opportunity"), dict) and run["best_opportunity"]
+    ]
+    ranked_opportunities = sort_opportunities(ranked_opportunities)
+
+    if not ranked_opportunities:
+        message = (
+            f"No runs found for project '{project_id}' and mode '{mode}'."
+            if mode is not None
+            else f"No runs found for project '{project_id}'."
+        )
+    else:
+        message = None
+
+    return {
+        "project_id": project_id,
+        "total_runs": len(runs),
+        "total_opportunities": len(ranked_opportunities),
+        "message": message,
+        "top_opportunity": ranked_opportunities[0] if ranked_opportunities else None,
+        "ranked_opportunities": ranked_opportunities,
+    }
+
+
 def normalize_run_record(run_data: dict) -> dict:
     requested_mode = str(run_data.get("mode") or DEFAULT_MODE)
     mode = requested_mode if requested_mode in OPERATOR_MODES else DEFAULT_MODE
@@ -137,9 +174,7 @@ def normalize_run_record(run_data: dict) -> dict:
         fallback_item = fallback_opportunities[min(index, len(fallback_opportunities) - 1)]
         normalized_opportunities.append(_normalize_opportunity_record(opportunity, fallback_item))
 
-    normalized_opportunities.sort(
-        key=lambda item: (-int(item["opportunity_score"]), -int(item["confidence_score"]))
-    )
+    normalized_opportunities = sort_opportunities(normalized_opportunities)
 
     raw_best = run_data.get("best_opportunity")
     if isinstance(raw_best, dict) and raw_best:
