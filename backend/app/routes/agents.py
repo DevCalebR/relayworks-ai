@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.schemas.asset_pack import AssetPackRequest, AssetPackResponse
 from app.schemas.launch_plan import LaunchPlanRequest, LaunchPlanResponse
-from app.schemas.outreach import OutreachLogResponse, OutreachRequest
+from app.schemas.outreach import OutreachLogResponse, OutreachRequest, OutreachStatusUpdate
 from app.schemas.run import CompareResponse, OperatorMode, RunRequest, RunResponse
 from app.services.asset_pack_agent import generate_asset_pack
 from app.services.launch_plan_agent import generate_launch_plan
@@ -14,12 +14,14 @@ from app.services.memory_service import (
     get_asset_pack_record,
     get_lead_record,
     get_project,
+    get_outreach_log_record,
     list_asset_packs,
     list_launch_plans,
     list_outreach_logs,
     list_runs,
     resolve_launch_plan_source,
     resolve_stored_launch_plan,
+    update_outreach_status,
 )
 from app.services.orchestrator import run_agents
 
@@ -200,3 +202,17 @@ def list_outreach_endpoint(
         OutreachLogResponse(**outreach_log)
         for outreach_log in list_outreach_logs(project_id=project_id, lead_id=lead_id)
     ]
+
+
+@router.patch("/outreach/{outreach_id}", response_model=OutreachLogResponse)
+def update_outreach_endpoint(
+    outreach_id: str,
+    request: OutreachStatusUpdate,
+) -> OutreachLogResponse:
+    if get_outreach_log_record(outreach_id) is None:
+        raise HTTPException(status_code=404, detail="Outreach log not found")
+
+    updated_outreach = update_outreach_status(outreach_id=outreach_id, status=request.status)
+    if updated_outreach is None:
+        raise HTTPException(status_code=404, detail="Outreach log not found")
+    return OutreachLogResponse(**updated_outreach)

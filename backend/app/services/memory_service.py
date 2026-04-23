@@ -257,6 +257,16 @@ def get_lead_record(lead_id: str, project_id: str | None = None) -> dict | None:
     return None
 
 
+def update_lead_status(lead_id: str, status: str) -> dict | None:
+    leads = load_leads()
+    for lead in leads:
+        if lead.get("id") == lead_id:
+            lead["status"] = status
+            save_leads(leads)
+            return lead
+    return None
+
+
 def load_outreach_logs() -> list[dict]:
     return _load_json_file(OUTREACH_LOGS_FILE)
 
@@ -282,6 +292,23 @@ def create_outreach_log(outreach_log_data: dict) -> dict:
     return record
 
 
+def get_outreach_log_record(outreach_id: str) -> dict | None:
+    for outreach_log in load_outreach_logs():
+        if outreach_log.get("id") == outreach_id:
+            return outreach_log
+    return None
+
+
+def update_outreach_status(outreach_id: str, status: str) -> dict | None:
+    outreach_logs = load_outreach_logs()
+    for outreach_log in outreach_logs:
+        if outreach_log.get("id") == outreach_id:
+            outreach_log["status"] = status
+            save_outreach_logs(outreach_logs)
+            return outreach_log
+    return None
+
+
 def list_outreach_logs(
     project_id: str | None = None,
     lead_id: str | None = None,
@@ -298,6 +325,41 @@ def list_outreach_logs(
             outreach_log for outreach_log in outreach_logs if outreach_log.get("lead_id") == lead_id
         ]
     return outreach_logs
+
+
+def get_pipeline_metrics(project_id: str) -> dict:
+    leads = list_leads(project_id=project_id)
+    outreach_logs = list_outreach_logs(project_id=project_id)
+
+    lead_counts = {
+        "new": 0,
+        "contacted": 0,
+        "replied": 0,
+        "interested": 0,
+        "closed": 0,
+        "total": len(leads),
+    }
+    for lead in leads:
+        status = str(lead.get("status") or "")
+        if status in lead_counts:
+            lead_counts[status] += 1
+
+    outreach_counts = {
+        "sent": 0,
+        "replied": 0,
+        "ignored": 0,
+        "total": len(outreach_logs),
+    }
+    for outreach_log in outreach_logs:
+        status = str(outreach_log.get("status") or "")
+        if status in outreach_counts:
+            outreach_counts[status] += 1
+
+    return {
+        "project_id": project_id,
+        "lead_counts": lead_counts,
+        "outreach_counts": outreach_counts,
+    }
 
 
 def compare_best_runs(project_id: str, mode: str | None = None) -> dict:

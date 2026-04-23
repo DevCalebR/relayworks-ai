@@ -13,6 +13,10 @@ class LeadCreate(BaseModel):
     status: LeadStatus = "new"
 
 
+class LeadStatusUpdate(BaseModel):
+    status: LeadStatus
+
+
 class LeadResponse(BaseModel):
     id: str
     project_id: str

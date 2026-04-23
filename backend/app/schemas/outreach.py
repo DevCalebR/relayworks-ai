@@ -13,6 +13,10 @@ class OutreachRequest(BaseModel):
     channel: OutreachChannel = "email"
 
 
+class OutreachStatusUpdate(BaseModel):
+    status: OutreachStatus
+
+
 class OutreachLogResponse(BaseModel):
     id: str
     project_id: str
