@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.schemas.outreach import OutreachChannel
+
 
 class LeadCounts(BaseModel):
     new: int
@@ -30,3 +32,8 @@ class FollowUpQueueItem(BaseModel):
     last_outreach_id: str
     channel: str
     message: str
+
+
+class FollowUpRequest(BaseModel):
+    project_id: str
+    channel: OutreachChannel = "email"

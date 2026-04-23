@@ -285,6 +285,11 @@ def create_outreach_log(outreach_log_data: dict) -> dict:
         "channel": str(outreach_log_data.get("channel") or "email"),
         "message": str(outreach_log_data.get("message") or ""),
         "status": str(outreach_log_data.get("status") or "sent"),
+        "reply_text": (
+            str(outreach_log_data.get("reply_text")).strip()
+            if outreach_log_data.get("reply_text") is not None
+            else None
+        ),
         "created_at": str(outreach_log_data.get("created_at") or _now_iso()),
     }
     outreach_logs.append(record)
@@ -299,11 +304,17 @@ def get_outreach_log_record(outreach_id: str) -> dict | None:
     return None
 
 
-def update_outreach_status(outreach_id: str, status: str) -> dict | None:
+def update_outreach_status(
+    outreach_id: str,
+    status: str,
+    reply_text: str | None = None,
+) -> dict | None:
     outreach_logs = load_outreach_logs()
     for outreach_log in outreach_logs:
         if outreach_log.get("id") == outreach_id:
             outreach_log["status"] = status
+            if reply_text is not None:
+                outreach_log["reply_text"] = reply_text.strip() or None
             save_outreach_logs(outreach_logs)
             return outreach_log
     return None
@@ -341,6 +352,19 @@ def get_latest_outreach_by_lead(project_id: str) -> dict[str, dict]:
         if lead_id:
             latest_by_lead[lead_id] = outreach_log
     return latest_by_lead
+
+
+def get_latest_outreach_record(project_id: str, lead_id: str) -> dict | None:
+    outreach_logs = sorted(
+        list_outreach_logs(project_id=project_id, lead_id=lead_id),
+        key=lambda outreach_log: (
+            str(outreach_log.get("created_at") or ""),
+            str(outreach_log.get("id") or ""),
+        ),
+    )
+    if not outreach_logs:
+        return None
+    return outreach_logs[-1]
 
 
 def get_pipeline_metrics(project_id: str) -> dict:

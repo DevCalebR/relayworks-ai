@@ -278,7 +278,11 @@ def update_outreach_endpoint(
     if get_outreach_log_record(outreach_id) is None:
         raise HTTPException(status_code=404, detail="Outreach log not found")
 
-    updated_outreach = update_outreach_status(outreach_id=outreach_id, status=request.status)
+    updated_outreach = update_outreach_status(
+        outreach_id=outreach_id,
+        status=request.status,
+        reply_text=request.reply_text,
+    )
     if updated_outreach is None:
         raise HTTPException(status_code=404, detail="Outreach log not found")
     return OutreachLogResponse(**updated_outreach)

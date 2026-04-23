@@ -22,6 +22,7 @@ class OutreachBatchRequest(BaseModel):
 
 class OutreachStatusUpdate(BaseModel):
     status: OutreachStatus
+    reply_text: str | None = None
 
 
 class OutreachLogResponse(BaseModel):
@@ -32,4 +33,5 @@ class OutreachLogResponse(BaseModel):
     channel: OutreachChannel
     message: str
     status: OutreachStatus
+    reply_text: str | None = None
     created_at: str
