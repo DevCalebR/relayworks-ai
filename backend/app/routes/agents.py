@@ -16,6 +16,7 @@ def run_agents_endpoint(run_request: RunRequest) -> RunResponse:
     result = run_agents(
         project_id=run_request.project_id,
         objective=run_request.objective,
+        mode=run_request.mode,
     )
     return RunResponse(**result)
 
