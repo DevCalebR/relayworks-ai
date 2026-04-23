@@ -15,6 +15,7 @@ if not DATA_DIR.is_absolute():
 
 PROJECTS_FILE = DATA_DIR / "projects.json"
 RUNS_FILE = DATA_DIR / "runs.json"
+LAUNCH_PLANS_FILE = DATA_DIR / "launch_plans.json"
 
 
 def _write_json_file(path: Path, records: list[dict]) -> None:
@@ -93,6 +94,43 @@ def list_runs(project_id: str | None = None) -> list[dict]:
     return [run for run in runs if run.get("project_id") == project_id]
 
 
+def get_run_record(run_id: str, project_id: str | None = None) -> dict | None:
+    for run in list_runs(project_id=project_id):
+        if run.get("id") == run_id:
+            return run
+    return None
+
+
+def load_launch_plans() -> list[dict]:
+    return _load_json_file(LAUNCH_PLANS_FILE)
+
+
+def save_launch_plans(launch_plans: list[dict]) -> None:
+    _write_json_file(LAUNCH_PLANS_FILE, launch_plans)
+
+
+def create_launch_plan_record(launch_plan_data: dict) -> dict:
+    launch_plans = load_launch_plans()
+    launch_plans.append(launch_plan_data)
+    save_launch_plans(launch_plans)
+    return launch_plan_data
+
+
+def list_launch_plans(project_id: str | None = None, run_id: str | None = None) -> list[dict]:
+    launch_plans = load_launch_plans()
+    if project_id is not None:
+        launch_plans = [
+            launch_plan for launch_plan in launch_plans if launch_plan.get("project_id") == project_id
+        ]
+    if run_id is not None:
+        launch_plans = [
+            launch_plan
+            for launch_plan in launch_plans
+            if launch_plan.get("source_run_id") == run_id
+        ]
+    return launch_plans
+
+
 def compare_best_runs(project_id: str, mode: str | None = None) -> dict:
     runs = list_runs(project_id=project_id)
     if mode is not None:
@@ -127,6 +165,42 @@ def compare_best_runs(project_id: str, mode: str | None = None) -> dict:
         "top_opportunity": ranked_opportunities[0] if ranked_opportunities else None,
         "ranked_opportunities": ranked_opportunities,
     }
+
+
+def resolve_run_opportunity(project_id: str, run_id: str) -> dict | None:
+    run = get_run_record(run_id=run_id, project_id=project_id)
+    if run is None:
+        return None
+    return {
+        "project_id": project_id,
+        "source_run_id": run["id"],
+        "mode": run["mode"],
+        "objective": run["objective"],
+        "selected_opportunity": run["best_opportunity"],
+    }
+
+
+def resolve_launch_plan_source(
+    project_id: str,
+    run_id: str | None = None,
+    mode: str | None = None,
+    use_top_opportunity: bool = False,
+) -> dict | None:
+    if run_id is not None:
+        return resolve_run_opportunity(project_id=project_id, run_id=run_id)
+
+    if not use_top_opportunity:
+        return None
+
+    compare_result = compare_best_runs(project_id=project_id, mode=mode)
+    top_opportunity = compare_result.get("top_opportunity")
+    if not isinstance(top_opportunity, dict) or not top_opportunity:
+        return None
+
+    source_run_id = str(top_opportunity.get("run_id") or "")
+    if not source_run_id:
+        return None
+    return resolve_run_opportunity(project_id=project_id, run_id=source_run_id)
 
 
 def normalize_run_record(run_data: dict) -> dict:
