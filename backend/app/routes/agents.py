@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.schemas.asset_pack import AssetPackRequest, AssetPackResponse
 from app.schemas.launch_plan import LaunchPlanRequest, LaunchPlanResponse
+from app.schemas.outreach import OutreachLogResponse, OutreachRequest
 from app.schemas.run import CompareResponse, OperatorMode, RunRequest, RunResponse
 from app.services.asset_pack_agent import generate_asset_pack
 from app.services.launch_plan_agent import generate_launch_plan
@@ -9,9 +10,13 @@ from app.services.memory_service import (
     compare_best_runs,
     create_asset_pack_record,
     create_launch_plan_record,
+    create_outreach_log,
+    get_asset_pack_record,
+    get_lead_record,
     get_project,
     list_asset_packs,
     list_launch_plans,
+    list_outreach_logs,
     list_runs,
     resolve_launch_plan_source,
     resolve_stored_launch_plan,
@@ -133,4 +138,65 @@ def list_asset_packs_endpoint(
             project_id=project_id,
             launch_plan_id=launch_plan_id,
         )
+    ]
+
+
+def _resolve_outreach_message(asset_pack: dict, channel: str) -> str:
+    email_subject = str(asset_pack.get("cold_outreach_email_subject") or "").strip()
+    email_body = str(asset_pack.get("cold_outreach_email_body") or "").strip()
+    linkedin_dm = str(asset_pack.get("linkedin_dm") or "").strip()
+
+    if channel == "linkedin":
+        return linkedin_dm
+    if channel == "email":
+        if email_subject and email_body:
+            return f"Subject: {email_subject}\n\n{email_body}"
+        return email_body
+    return linkedin_dm or (
+        f"Subject: {email_subject}\n\n{email_body}" if email_subject and email_body else email_body
+    )
+
+
+@router.post("/outreach", response_model=OutreachLogResponse)
+def create_outreach_endpoint(request: OutreachRequest) -> OutreachLogResponse:
+    project = get_project(request.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    lead = get_lead_record(lead_id=request.lead_id, project_id=request.project_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Lead not found for project")
+
+    asset_pack = get_asset_pack_record(
+        asset_pack_id=request.asset_pack_id,
+        project_id=request.project_id,
+    )
+    if asset_pack is None:
+        raise HTTPException(status_code=404, detail="Asset pack not found for project")
+
+    message = _resolve_outreach_message(asset_pack=asset_pack, channel=request.channel)
+    if not message:
+        raise HTTPException(status_code=400, detail="Asset pack does not contain outreach copy")
+
+    outreach_log = create_outreach_log(
+        {
+            "project_id": request.project_id,
+            "lead_id": request.lead_id,
+            "asset_pack_id": request.asset_pack_id,
+            "channel": request.channel,
+            "message": message,
+            "status": "sent",
+        }
+    )
+    return OutreachLogResponse(**outreach_log)
+
+
+@router.get("/outreach", response_model=list[OutreachLogResponse])
+def list_outreach_endpoint(
+    project_id: str | None = None,
+    lead_id: str | None = None,
+) -> list[OutreachLogResponse]:
+    return [
+        OutreachLogResponse(**outreach_log)
+        for outreach_log in list_outreach_logs(project_id=project_id, lead_id=lead_id)
     ]

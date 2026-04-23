@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,6 +18,8 @@ PROJECTS_FILE = DATA_DIR / "projects.json"
 RUNS_FILE = DATA_DIR / "runs.json"
 LAUNCH_PLANS_FILE = DATA_DIR / "launch_plans.json"
 ASSET_PACKS_FILE = DATA_DIR / "asset_packs.json"
+LEADS_FILE = DATA_DIR / "leads.json"
+OUTREACH_LOGS_FILE = DATA_DIR / "outreach_logs.json"
 
 
 def _write_json_file(path: Path, records: list[dict]) -> None:
@@ -42,6 +45,10 @@ def _load_json_file(path: Path) -> list[dict]:
         _write_json_file(path, raw_data)
 
     return raw_data
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def load_projects() -> list[dict]:
@@ -203,6 +210,94 @@ def list_asset_packs(
             if asset_pack.get("launch_plan_id") == launch_plan_id
         ]
     return asset_packs
+
+
+def get_asset_pack_record(asset_pack_id: str, project_id: str | None = None) -> dict | None:
+    for asset_pack in list_asset_packs(project_id=project_id):
+        if asset_pack.get("id") == asset_pack_id:
+            return asset_pack
+    return None
+
+
+def load_leads() -> list[dict]:
+    return _load_json_file(LEADS_FILE)
+
+
+def save_leads(leads: list[dict]) -> None:
+    _write_json_file(LEADS_FILE, leads)
+
+
+def create_lead(lead_data: dict) -> dict:
+    leads = load_leads()
+    record = {
+        "id": str(lead_data.get("id") or f"lead_{uuid4().hex[:12]}"),
+        "project_id": str(lead_data.get("project_id") or ""),
+        "company_name": str(lead_data.get("company_name") or ""),
+        "contact_name": str(lead_data.get("contact_name") or ""),
+        "contact_email": str(lead_data.get("contact_email") or ""),
+        "status": str(lead_data.get("status") or "new"),
+        "created_at": str(lead_data.get("created_at") or _now_iso()),
+    }
+    leads.append(record)
+    save_leads(leads)
+    return record
+
+
+def list_leads(project_id: str | None = None) -> list[dict]:
+    leads = load_leads()
+    if project_id is None:
+        return leads
+    return [lead for lead in leads if lead.get("project_id") == project_id]
+
+
+def get_lead_record(lead_id: str, project_id: str | None = None) -> dict | None:
+    for lead in list_leads(project_id=project_id):
+        if lead.get("id") == lead_id:
+            return lead
+    return None
+
+
+def load_outreach_logs() -> list[dict]:
+    return _load_json_file(OUTREACH_LOGS_FILE)
+
+
+def save_outreach_logs(outreach_logs: list[dict]) -> None:
+    _write_json_file(OUTREACH_LOGS_FILE, outreach_logs)
+
+
+def create_outreach_log(outreach_log_data: dict) -> dict:
+    outreach_logs = load_outreach_logs()
+    record = {
+        "id": str(outreach_log_data.get("id") or f"outreach_{uuid4().hex[:12]}"),
+        "project_id": str(outreach_log_data.get("project_id") or ""),
+        "lead_id": str(outreach_log_data.get("lead_id") or ""),
+        "asset_pack_id": str(outreach_log_data.get("asset_pack_id") or ""),
+        "channel": str(outreach_log_data.get("channel") or "email"),
+        "message": str(outreach_log_data.get("message") or ""),
+        "status": str(outreach_log_data.get("status") or "sent"),
+        "created_at": str(outreach_log_data.get("created_at") or _now_iso()),
+    }
+    outreach_logs.append(record)
+    save_outreach_logs(outreach_logs)
+    return record
+
+
+def list_outreach_logs(
+    project_id: str | None = None,
+    lead_id: str | None = None,
+) -> list[dict]:
+    outreach_logs = load_outreach_logs()
+    if project_id is not None:
+        outreach_logs = [
+            outreach_log
+            for outreach_log in outreach_logs
+            if outreach_log.get("project_id") == project_id
+        ]
+    if lead_id is not None:
+        outreach_logs = [
+            outreach_log for outreach_log in outreach_logs if outreach_log.get("lead_id") == lead_id
+        ]
+    return outreach_logs
 
 
 def compare_best_runs(project_id: str, mode: str | None = None) -> dict:
