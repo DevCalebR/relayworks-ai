@@ -13,6 +13,7 @@ class RunResult:
     strategy_summary: str = ""
     execution_output: str = ""
     mode: str = DEFAULT_MODE
+    title: str = "General AI operator opportunity"
     niche: str = "General AI operator opportunity"
     target_customer: str = "Small and midsize businesses"
     core_problem: str = "Teams lack a profitable AI workflow with clear ROI"
@@ -24,6 +25,8 @@ class RunResult:
     confidence_score: int = 5
     reasoning: str = "Baseline structured opportunity record."
     next_actions: list[str] | None = None
+    opportunities: list[dict] | None = None
+    best_opportunity: dict | None = None
     status: str = "completed"
     created_at: str = ""
 
@@ -31,4 +34,8 @@ class RunResult:
         payload = asdict(self)
         if payload["next_actions"] is None:
             payload["next_actions"] = []
+        if payload["opportunities"] is None:
+            payload["opportunities"] = []
+        if payload["best_opportunity"] is None:
+            payload["best_opportunity"] = {}
         return payload
