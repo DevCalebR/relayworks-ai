@@ -13,6 +13,13 @@ class OutreachRequest(BaseModel):
     channel: OutreachChannel = "email"
 
 
+class OutreachBatchRequest(BaseModel):
+    project_id: str
+    lead_ids: list[str]
+    asset_pack_id: str
+    channel: OutreachChannel = "email"
+
+
 class OutreachStatusUpdate(BaseModel):
     status: OutreachStatus
 

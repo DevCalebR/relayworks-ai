@@ -327,6 +327,22 @@ def list_outreach_logs(
     return outreach_logs
 
 
+def get_latest_outreach_by_lead(project_id: str) -> dict[str, dict]:
+    latest_by_lead: dict[str, dict] = {}
+    outreach_logs = sorted(
+        list_outreach_logs(project_id=project_id),
+        key=lambda outreach_log: (
+            str(outreach_log.get("created_at") or ""),
+            str(outreach_log.get("id") or ""),
+        ),
+    )
+    for outreach_log in outreach_logs:
+        lead_id = str(outreach_log.get("lead_id") or "")
+        if lead_id:
+            latest_by_lead[lead_id] = outreach_log
+    return latest_by_lead
+
+
 def get_pipeline_metrics(project_id: str) -> dict:
     leads = list_leads(project_id=project_id)
     outreach_logs = list_outreach_logs(project_id=project_id)
@@ -360,6 +376,36 @@ def get_pipeline_metrics(project_id: str) -> dict:
         "lead_counts": lead_counts,
         "outreach_counts": outreach_counts,
     }
+
+
+def list_follow_up_queue(project_id: str) -> list[dict]:
+    leads = list_leads(project_id=project_id)
+    latest_by_lead = get_latest_outreach_by_lead(project_id=project_id)
+    follow_ups = []
+
+    for lead in leads:
+        if str(lead.get("status") or "") != "contacted":
+            continue
+
+        lead_id = str(lead.get("id") or "")
+        latest_outreach = latest_by_lead.get(lead_id)
+        if latest_outreach is None:
+            continue
+        if str(latest_outreach.get("status") or "") != "sent":
+            continue
+
+        follow_ups.append(
+            {
+                "lead_id": lead_id,
+                "company_name": str(lead.get("company_name") or ""),
+                "contact_name": str(lead.get("contact_name") or ""),
+                "last_outreach_id": str(latest_outreach.get("id") or ""),
+                "channel": str(latest_outreach.get("channel") or ""),
+                "message": str(latest_outreach.get("message") or ""),
+            }
+        )
+
+    return follow_ups
 
 
 def compare_best_runs(project_id: str, mode: str | None = None) -> dict:
