@@ -11,6 +11,7 @@ from app.schemas.outreach import (
 from app.schemas.run import CompareResponse, OperatorMode, RunRequest, RunResponse
 from app.services.asset_pack_agent import generate_asset_pack
 from app.services.launch_plan_agent import generate_launch_plan
+from app.services.personalization_agent import generate_personalized_outreach
 from app.services.memory_service import (
     compare_best_runs,
     create_asset_pack_record,
@@ -148,38 +149,17 @@ def list_asset_packs_endpoint(
     ]
 
 
-def _resolve_outreach_message(asset_pack: dict, channel: str) -> str:
-    email_subject = str(asset_pack.get("cold_outreach_email_subject") or "").strip()
-    email_body = str(asset_pack.get("cold_outreach_email_body") or "").strip()
-    linkedin_dm = str(asset_pack.get("linkedin_dm") or "").strip()
-
-    if channel == "linkedin":
-        return linkedin_dm
-    if channel == "email":
-        if email_subject and email_body:
-            return f"Subject: {email_subject}\n\n{email_body}"
-        return email_body
-    return linkedin_dm or (
-        f"Subject: {email_subject}\n\n{email_body}" if email_subject and email_body else email_body
-    )
-
-
-def _resolve_project_outreach_message(
+def _get_project_asset_pack(
     project_id: str,
     asset_pack_id: str,
-    channel: str,
-) -> str:
+) -> dict:
     asset_pack = get_asset_pack_record(
         asset_pack_id=asset_pack_id,
         project_id=project_id,
     )
     if asset_pack is None:
         raise HTTPException(status_code=404, detail="Asset pack not found for project")
-
-    message = _resolve_outreach_message(asset_pack=asset_pack, channel=channel)
-    if not message:
-        raise HTTPException(status_code=400, detail="Asset pack does not contain outreach copy")
-    return message
+    return asset_pack
 
 
 def _create_outreach_record(
@@ -192,9 +172,10 @@ def _create_outreach_record(
     if lead is None:
         raise HTTPException(status_code=404, detail=f"Lead not found for project: {lead_id}")
 
-    message = _resolve_project_outreach_message(
-        project_id=project_id,
-        asset_pack_id=asset_pack_id,
+    asset_pack = _get_project_asset_pack(project_id=project_id, asset_pack_id=asset_pack_id)
+    message, _generation_mode = generate_personalized_outreach(
+        lead=lead,
+        asset_pack=asset_pack,
         channel=channel,
     )
     return create_outreach_log(
@@ -232,10 +213,9 @@ def create_batch_outreach_endpoint(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    message = _resolve_project_outreach_message(
+    asset_pack = _get_project_asset_pack(
         project_id=request.project_id,
         asset_pack_id=request.asset_pack_id,
-        channel=request.channel,
     )
     for lead_id in request.lead_ids:
         if get_lead_record(lead_id=lead_id, project_id=request.project_id) is None:
@@ -249,7 +229,11 @@ def create_batch_outreach_endpoint(
                     "lead_id": lead_id,
                     "asset_pack_id": request.asset_pack_id,
                     "channel": request.channel,
-                    "message": message,
+                    "message": generate_personalized_outreach(
+                        lead=get_lead_record(lead_id=lead_id, project_id=request.project_id) or {},
+                        asset_pack=asset_pack,
+                        channel=request.channel,
+                    )[0],
                     "status": "sent",
                 }
             )

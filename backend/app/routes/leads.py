@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.lead import LeadCreate, LeadResponse, LeadStatusUpdate
-from app.services.memory_service import create_lead, get_project, list_leads, update_lead_status
+from app.services.memory_service import create_lead, get_project, list_leads, update_lead
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -25,7 +25,8 @@ def list_leads_endpoint(project_id: str | None = None) -> list[LeadResponse]:
 
 @router.patch("/{lead_id}", response_model=LeadResponse)
 def update_lead_status_endpoint(lead_id: str, request: LeadStatusUpdate) -> LeadResponse:
-    updated_lead = update_lead_status(lead_id=lead_id, status=request.status)
+    request_data = request.model_dump(exclude_unset=True) if hasattr(request, "model_dump") else request.dict(exclude_unset=True)
+    updated_lead = update_lead(lead_id=lead_id, updates=request_data)
     if updated_lead is None:
         raise HTTPException(status_code=404, detail="Lead not found")
     return LeadResponse(**updated_lead)

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.schemas.outreach import OutreachLogResponse
 from app.schemas.pipeline import FollowUpQueueItem, FollowUpRequest, PipelineMetricsResponse
-from app.services.follow_up_agent import generate_follow_up_message
+from app.services.personalization_agent import generate_personalized_follow_up
 from app.services.memory_service import (
     create_outreach_log,
     get_asset_pack_record,
@@ -47,7 +47,7 @@ def create_follow_up_endpoint(
         asset_pack_id=str(latest_outreach.get("asset_pack_id") or ""),
         project_id=request.project_id,
     )
-    follow_up_message, _generation_mode = generate_follow_up_message(
+    follow_up_message, _generation_mode = generate_personalized_follow_up(
         lead=lead,
         latest_outreach=latest_outreach,
         channel=request.channel,

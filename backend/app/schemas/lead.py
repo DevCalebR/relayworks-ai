@@ -11,10 +11,18 @@ class LeadCreate(BaseModel):
     contact_name: str
     contact_email: str
     status: LeadStatus = "new"
+    company_description: str | None = None
+    industry: str | None = None
+    website: str | None = None
+    notes: str | None = None
 
 
 class LeadStatusUpdate(BaseModel):
-    status: LeadStatus
+    status: LeadStatus | None = None
+    company_description: str | None = None
+    industry: str | None = None
+    website: str | None = None
+    notes: str | None = None
 
 
 class LeadResponse(BaseModel):
@@ -24,4 +32,8 @@ class LeadResponse(BaseModel):
     contact_name: str
     contact_email: str
     status: LeadStatus
+    company_description: str | None = None
+    industry: str | None = None
+    website: str | None = None
+    notes: str | None = None
     created_at: str

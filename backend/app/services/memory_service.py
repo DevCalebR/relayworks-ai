@@ -236,6 +236,26 @@ def create_lead(lead_data: dict) -> dict:
         "contact_name": str(lead_data.get("contact_name") or ""),
         "contact_email": str(lead_data.get("contact_email") or ""),
         "status": str(lead_data.get("status") or "new"),
+        "company_description": (
+            str(lead_data.get("company_description")).strip()
+            if lead_data.get("company_description") is not None
+            else None
+        ),
+        "industry": (
+            str(lead_data.get("industry")).strip()
+            if lead_data.get("industry") is not None
+            else None
+        ),
+        "website": (
+            str(lead_data.get("website")).strip()
+            if lead_data.get("website") is not None
+            else None
+        ),
+        "notes": (
+            str(lead_data.get("notes")).strip()
+            if lead_data.get("notes") is not None
+            else None
+        ),
         "created_at": str(lead_data.get("created_at") or _now_iso()),
     }
     leads.append(record)
@@ -257,11 +277,18 @@ def get_lead_record(lead_id: str, project_id: str | None = None) -> dict | None:
     return None
 
 
-def update_lead_status(lead_id: str, status: str) -> dict | None:
+def update_lead(
+    lead_id: str,
+    updates: dict,
+) -> dict | None:
     leads = load_leads()
     for lead in leads:
         if lead.get("id") == lead_id:
-            lead["status"] = status
+            if updates.get("status") is not None:
+                lead["status"] = str(updates["status"])
+            for field in ("company_description", "industry", "website", "notes"):
+                if field in updates and updates[field] is not None:
+                    lead[field] = str(updates[field]).strip() or None
             save_leads(leads)
             return lead
     return None
