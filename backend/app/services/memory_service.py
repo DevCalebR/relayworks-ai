@@ -20,6 +20,7 @@ LAUNCH_PLANS_FILE = DATA_DIR / "launch_plans.json"
 ASSET_PACKS_FILE = DATA_DIR / "asset_packs.json"
 LEADS_FILE = DATA_DIR / "leads.json"
 OUTREACH_LOGS_FILE = DATA_DIR / "outreach_logs.json"
+OUTREACH_STATUSES = {"draft", "sent", "replied", "ignored"}
 
 
 def _write_json_file(path: Path, records: list[dict]) -> None:
@@ -302,9 +303,22 @@ def save_outreach_logs(outreach_logs: list[dict]) -> None:
     _write_json_file(OUTREACH_LOGS_FILE, outreach_logs)
 
 
+def normalize_outreach_log_record(outreach_log_data: dict) -> dict:
+    record = dict(outreach_log_data)
+    status = str(record.get("status") or "sent")
+    if status not in OUTREACH_STATUSES:
+        status = "sent"
+    record["status"] = status
+    record["reply_text"] = (
+        str(record.get("reply_text")).strip() if record.get("reply_text") is not None else None
+    )
+    return record
+
+
 def create_outreach_log(outreach_log_data: dict) -> dict:
     outreach_logs = load_outreach_logs()
-    record = {
+    record = normalize_outreach_log_record(
+        {
         "id": str(outreach_log_data.get("id") or f"outreach_{uuid4().hex[:12]}"),
         "project_id": str(outreach_log_data.get("project_id") or ""),
         "lead_id": str(outreach_log_data.get("lead_id") or ""),
@@ -318,7 +332,8 @@ def create_outreach_log(outreach_log_data: dict) -> dict:
             else None
         ),
         "created_at": str(outreach_log_data.get("created_at") or _now_iso()),
-    }
+        }
+    )
     outreach_logs.append(record)
     save_outreach_logs(outreach_logs)
     return record
@@ -327,7 +342,7 @@ def create_outreach_log(outreach_log_data: dict) -> dict:
 def get_outreach_log_record(outreach_id: str) -> dict | None:
     for outreach_log in load_outreach_logs():
         if outreach_log.get("id") == outreach_id:
-            return outreach_log
+            return normalize_outreach_log_record(outreach_log)
     return None
 
 
@@ -343,7 +358,7 @@ def update_outreach_status(
             if reply_text is not None:
                 outreach_log["reply_text"] = reply_text.strip() or None
             save_outreach_logs(outreach_logs)
-            return outreach_log
+            return normalize_outreach_log_record(outreach_log)
     return None
 
 
@@ -351,7 +366,7 @@ def list_outreach_logs(
     project_id: str | None = None,
     lead_id: str | None = None,
 ) -> list[dict]:
-    outreach_logs = load_outreach_logs()
+    outreach_logs = [normalize_outreach_log_record(item) for item in load_outreach_logs()]
     if project_id is not None:
         outreach_logs = [
             outreach_log
@@ -412,6 +427,7 @@ def get_pipeline_metrics(project_id: str) -> dict:
             lead_counts[status] += 1
 
     outreach_counts = {
+        "draft": 0,
         "sent": 0,
         "replied": 0,
         "ignored": 0,

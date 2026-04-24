@@ -42,6 +42,11 @@ def create_follow_up_endpoint(
     latest_outreach = get_latest_outreach_record(project_id=request.project_id, lead_id=lead_id)
     if latest_outreach is None:
         raise HTTPException(status_code=404, detail="No outreach found for lead")
+    if str(latest_outreach.get("status") or "") != "sent":
+        raise HTTPException(
+            status_code=400,
+            detail="Latest outreach must be sent before generating a follow-up",
+        )
 
     asset_pack = get_asset_pack_record(
         asset_pack_id=str(latest_outreach.get("asset_pack_id") or ""),

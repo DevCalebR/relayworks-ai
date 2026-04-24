@@ -17,6 +17,22 @@ class LeadCreate(BaseModel):
     notes: str | None = None
 
 
+class LeadBatchItem(BaseModel):
+    company_name: str
+    contact_name: str
+    contact_email: str
+    status: LeadStatus = "new"
+    company_description: str | None = None
+    industry: str | None = None
+    website: str | None = None
+    notes: str | None = None
+
+
+class LeadBatchCreate(BaseModel):
+    project_id: str
+    leads: list[LeadBatchItem]
+
+
 class LeadStatusUpdate(BaseModel):
     status: LeadStatus | None = None
     company_description: str | None = None

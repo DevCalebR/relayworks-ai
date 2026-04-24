@@ -3,11 +3,13 @@ import re
 from app.services.research_agent import generate_openai_text
 
 PLACEHOLDER_PATTERNS = [
+    r"\[[^\]]*name[^\]]*\]",
     r"\[name\]",
     r"\[your name\]",
     r"\[company\]",
     r"\[specific field\]",
     r"<insert[^>]*>",
+    r"\{\{[^{}]+\}\}",
 ]
 
 
@@ -30,6 +32,22 @@ def _context_signals(lead: dict) -> list[str]:
         if value:
             signals.append(value)
     return signals
+
+
+def _first_name_from_contact_name(contact_name: str) -> str:
+    tokens = [token.strip(" ,.") for token in contact_name.split() if token.strip(" ,.")]
+    if not tokens:
+        return ""
+    prefixes = {"mr", "mrs", "ms", "miss", "dr", "prof"}
+    while tokens and tokens[0].lower().rstrip(".") in prefixes:
+        tokens.pop(0)
+    return tokens[0] if tokens else ""
+
+
+def _greeting_name(lead: dict) -> str:
+    contact_name = str(lead.get("contact_name") or "").strip()
+    first_name = _first_name_from_contact_name(contact_name)
+    return first_name or contact_name or "there"
 
 
 def _has_required_context(message: str, lead: dict) -> bool:
@@ -86,7 +104,9 @@ def _notes_focus_phrase(notes: str) -> str:
     lowered = cleaned.lower()
     for prefix in (
         "likely cares about ",
+        "likely interested in ",
         "cares about ",
+        "interested in ",
         "focused on ",
         "priority is ",
     ):
@@ -114,15 +134,15 @@ def _fallback_outreach_message(lead: dict, asset_pack: dict, channel: str) -> st
     subject = str(asset_pack.get("cold_outreach_email_subject") or "Quick idea for your pipeline").strip()
 
     body_lines = [
-        f"Hi {str(lead.get('contact_name') or 'there').strip()},",
+        f"Hi {_greeting_name(lead)},",
         "",
         f"I took a look at {company_name} and the work you do{f' in {industry.lower()}' if industry else ''}.",
         "A practical angle here is turning recent lost or stalled deals into a tighter feedback loop for pipeline reviews and win-rate decisions.",
     ]
     if notes:
-        body_lines.append(f"Given your likely focus on {notes.lower()}, a small pilot could surface the exact objections and loss patterns your team can act on this quarter.")
+        body_lines.append(f"Given your likely focus on {notes}, a small pilot could surface the exact objections and loss patterns your team can act on this quarter.")
     elif company_description:
-        body_lines.append(f"That seems especially relevant for teams like {company_name} that are focused on {company_description.rstrip('.') .lower()}.")
+        body_lines.append(f"That seems especially relevant for teams like {company_name} that are focused on {company_description.rstrip('.')}.")
     body_lines.append("If useful, I can send a lean pilot outline and sample output this week.")
 
     body = "\n".join(body_lines)
@@ -137,7 +157,7 @@ def _fallback_follow_up_message(
     asset_pack: dict | None = None,
 ) -> str:
     company_name = str(lead.get("company_name") or "your team").strip()
-    contact_name = str(lead.get("contact_name") or "there").strip()
+    contact_name = _greeting_name(lead)
     industry = str(lead.get("industry") or "").strip()
     notes = _notes_focus_phrase(str(lead.get("notes") or ""))
     reply_text = str(latest_outreach.get("reply_text") or "").strip()
@@ -154,7 +174,7 @@ def _fallback_follow_up_message(
             f"I can send a lean pilot outline and sample output tailored to how {company_name} reviews lost and stalled deals{f' in {industry.lower()}' if industry else ''}.",
         ]
         if notes:
-            body_lines.append(f"I'll keep it focused on {notes.lower()} so it's easy to evaluate quickly.")
+            body_lines.append(f"I'll keep it focused on {notes} so it's easy to evaluate quickly.")
         elif pilot_offer:
             body_lines.append(pilot_offer)
         body_lines.append("Would it help if I sent that over today?")
@@ -167,7 +187,7 @@ def _fallback_follow_up_message(
             "That usually gives teams one concrete message, process, or qualification change they can use in the next pipeline review.",
         ]
         if notes:
-            body_lines.append(f"Is faster learning on {notes.lower()} a priority right now?")
+            body_lines.append(f"Is faster learning on {notes} a priority right now?")
         else:
             body_lines.append("Would a sample output help you assess whether this is worth a pilot?")
 
@@ -178,28 +198,28 @@ def _fallback_follow_up_message(
 
 def _clean_message(message: str) -> str:
     cleaned = message.replace("[Name]", "").replace("[Your Name]", "").replace("[Company]", "")
+    cleaned = cleaned.replace("[First Name]", "").replace("[Contact Name]", "")
     cleaned = cleaned.replace("[specific field]", "revenue operations")
     cleaned = re.sub(r"<insert[^>]*>", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\{\{[^{}]+\}\}", "", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
 def _post_process_message(message: str, lead: dict) -> str:
     cleaned = _clean_message(message)
-    contact_name = str(lead.get("contact_name") or "").strip()
-    if contact_name:
-        cleaned = cleaned.replace("\n\nHi ,\n\n", f"\n\nHi {contact_name},\n\n")
-        cleaned = cleaned.replace("\n\nHi ,\n", f"\n\nHi {contact_name},\n")
-        cleaned = cleaned.replace("\n\nHi,\n\n", f"\n\nHi {contact_name},\n\n")
-        cleaned = cleaned.replace("\n\nHi,\n", f"\n\nHi {contact_name},\n")
-        if cleaned.startswith("Hi ,\n\n"):
-            cleaned = cleaned.replace("Hi ,\n\n", f"Hi {contact_name},\n\n", 1)
-        elif cleaned.startswith("Hi,\n\n"):
-            cleaned = cleaned.replace("Hi,\n\n", f"Hi {contact_name},\n\n", 1)
-        elif cleaned.startswith("Hi ,\n"):
-            cleaned = cleaned.replace("Hi ,\n", f"Hi {contact_name},\n", 1)
-        elif cleaned.startswith("Hi,\n"):
-            cleaned = cleaned.replace("Hi,\n", f"Hi {contact_name},\n", 1)
+    greeting_name = _greeting_name(lead)
+    if greeting_name != "there":
+        greeting_patterns = [
+            (r"\n\n(?:Hi|Hello|Hey)\s*(?:there)?\s*,\n\n", f"\n\nHi {greeting_name},\n\n"),
+            (r"\n\n(?:Hi|Hello|Hey)\s*(?:there)?\s*,\n", f"\n\nHi {greeting_name},\n"),
+            (r"^(?:Hi|Hello|Hey)\s*(?:there)?\s*,\n\n", f"Hi {greeting_name},\n\n"),
+            (r"^(?:Hi|Hello|Hey)\s*(?:there)?\s*,\n", f"Hi {greeting_name},\n"),
+            (r"^((?:Subject:[^\n]*\n\n))(?:Hi|Hello|Hey)\s+[^,\n]+,\n", rf"\1Hi {greeting_name},\n"),
+            (r"^(?:Hi|Hello|Hey)\s+[^,\n]+,\n", f"Hi {greeting_name},\n"),
+        ]
+        for pattern, replacement in greeting_patterns:
+            cleaned = re.sub(pattern, replacement, cleaned, count=1, flags=re.IGNORECASE)
     cleaned = re.sub(r"^Subject:\s*Re:\s*Re:\s*", "Subject: Re: ", cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
@@ -232,6 +252,7 @@ def generate_personalized_outreach(
         "Use the company context naturally. Mention the company name. Mention the industry when useful.\n"
         "Reference the business context from the description or notes if available.\n"
         "Keep it short, value-driven, and realistic for cold outbound.\n"
+        "If contact_name is available, greet the recipient with their first name.\n"
         "If channel=email, start with 'Subject:' then a blank line then the body.\n\n"
         f"Channel: {channel}\n"
         f"Lead context:\n{lead_context}\n\n"
@@ -270,6 +291,7 @@ def generate_personalized_follow_up(
         "Reference the prior outreach, use the lead context naturally, and add a new angle instead of repeating the same pitch.\n"
         "You may ask one soft question. Keep the tone helpful and commercially credible.\n"
         "If reply_text is present, acknowledge it directly and write the next response accordingly.\n"
+        "If contact_name is available, greet the recipient with their first name.\n"
         "If channel=email, start with 'Subject:' then a blank line then the body.\n\n"
         f"Channel: {channel}\n"
         f"Lead context:\n{lead_context}\n\n"

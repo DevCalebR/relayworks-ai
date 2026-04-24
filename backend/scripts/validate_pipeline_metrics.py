@@ -29,7 +29,10 @@ def assert_counts(metrics: dict) -> None:
         + lead_counts["closed"]
     )
     assert outreach_counts["total"] == (
-        outreach_counts["sent"] + outreach_counts["replied"] + outreach_counts["ignored"]
+        outreach_counts["draft"]
+        + outreach_counts["sent"]
+        + outreach_counts["replied"]
+        + outreach_counts["ignored"]
     )
 
 

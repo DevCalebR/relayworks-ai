@@ -14,7 +14,10 @@ def is_openai_configured() -> bool:
 def get_openai_client() -> OpenAI | None:
     if not is_openai_configured():
         return None
-    return OpenAI(api_key=settings.OPENAI_API_KEY)
+    try:
+        return OpenAI(api_key=settings.OPENAI_API_KEY)
+    except Exception:
+        return None
 
 
 def generate_openai_text(prompt: str) -> str | None:

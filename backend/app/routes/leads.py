@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.lead import LeadCreate, LeadResponse, LeadStatusUpdate
+from app.schemas.lead import LeadBatchCreate, LeadCreate, LeadResponse, LeadStatusUpdate
 from app.services.memory_service import create_lead, get_project, list_leads, update_lead
 
 router = APIRouter(prefix="/leads", tags=["leads"])
@@ -16,6 +16,32 @@ def create_lead_endpoint(lead: LeadCreate) -> LeadResponse:
         lead.model_dump() if hasattr(lead, "model_dump") else lead.dict()
     )
     return LeadResponse(**created_lead)
+
+
+@router.post("/batch", response_model=list[LeadResponse])
+def create_batch_leads_endpoint(request: LeadBatchCreate) -> list[LeadResponse]:
+    project = get_project(request.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not request.leads:
+        raise HTTPException(status_code=400, detail="Leads list must not be empty")
+
+    created_leads = [
+        LeadResponse(
+            **create_lead(
+                {
+                    "project_id": request.project_id,
+                    **(
+                        lead.model_dump()
+                        if hasattr(lead, "model_dump")
+                        else lead.dict()
+                    ),
+                }
+            )
+        )
+        for lead in request.leads
+    ]
+    return created_leads
 
 
 @router.get("", response_model=list[LeadResponse])

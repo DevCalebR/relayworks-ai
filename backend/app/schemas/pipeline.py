@@ -13,6 +13,7 @@ class LeadCounts(BaseModel):
 
 
 class OutreachCounts(BaseModel):
+    draft: int
     sent: int
     replied: int
     ignored: int

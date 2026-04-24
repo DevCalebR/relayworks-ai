@@ -2,9 +2,12 @@ from fastapi import APIRouter, HTTPException
 
 from app.schemas.asset_pack import AssetPackRequest, AssetPackResponse
 from app.schemas.launch_plan import LaunchPlanRequest, LaunchPlanResponse
+from app.schemas.lead import LeadResponse
 from app.schemas.outreach import (
     OutreachBatchRequest,
     OutreachLogResponse,
+    OutreachMarkSentRequest,
+    OutreachMarkSentResponse,
     OutreachRequest,
     OutreachStatusUpdate,
 )
@@ -28,6 +31,7 @@ from app.services.memory_service import (
     resolve_launch_plan_source,
     resolve_stored_launch_plan,
     update_outreach_status,
+    update_lead,
 )
 from app.services.orchestrator import run_agents
 
@@ -167,6 +171,7 @@ def _create_outreach_record(
     lead_id: str,
     asset_pack_id: str,
     channel: str,
+    status: str = "sent",
 ) -> dict:
     lead = get_lead_record(lead_id=lead_id, project_id=project_id)
     if lead is None:
@@ -185,16 +190,30 @@ def _create_outreach_record(
             "asset_pack_id": asset_pack_id,
             "channel": channel,
             "message": message,
-            "status": "sent",
+            "status": status,
         }
     )
 
 
-@router.post("/outreach", response_model=OutreachLogResponse)
-def create_outreach_endpoint(request: OutreachRequest) -> OutreachLogResponse:
-    project = get_project(request.project_id)
+def _validate_project(project_id: str) -> None:
+    project = get_project(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
+
+
+def _get_project_leads(project_id: str, lead_ids: list[str]) -> dict[str, dict]:
+    leads_by_id: dict[str, dict] = {}
+    for lead_id in lead_ids:
+        lead = get_lead_record(lead_id=lead_id, project_id=project_id)
+        if lead is None:
+            raise HTTPException(status_code=404, detail=f"Lead not found for project: {lead_id}")
+        leads_by_id[lead_id] = lead
+    return leads_by_id
+
+
+@router.post("/outreach", response_model=OutreachLogResponse)
+def create_outreach_endpoint(request: OutreachRequest) -> OutreachLogResponse:
+    _validate_project(request.project_id)
 
     outreach_log = _create_outreach_record(
         project_id=request.project_id,
@@ -209,17 +228,15 @@ def create_outreach_endpoint(request: OutreachRequest) -> OutreachLogResponse:
 def create_batch_outreach_endpoint(
     request: OutreachBatchRequest,
 ) -> list[OutreachLogResponse]:
-    project = get_project(request.project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    _validate_project(request.project_id)
+    if not request.lead_ids:
+        raise HTTPException(status_code=400, detail="Lead IDs list must not be empty")
 
     asset_pack = _get_project_asset_pack(
         project_id=request.project_id,
         asset_pack_id=request.asset_pack_id,
     )
-    for lead_id in request.lead_ids:
-        if get_lead_record(lead_id=lead_id, project_id=request.project_id) is None:
-            raise HTTPException(status_code=404, detail=f"Lead not found for project: {lead_id}")
+    leads_by_id = _get_project_leads(project_id=request.project_id, lead_ids=request.lead_ids)
 
     created_outreach_logs = [
         OutreachLogResponse(
@@ -230,11 +247,61 @@ def create_batch_outreach_endpoint(
                     "asset_pack_id": request.asset_pack_id,
                     "channel": request.channel,
                     "message": generate_personalized_outreach(
-                        lead=get_lead_record(lead_id=lead_id, project_id=request.project_id) or {},
+                        lead=leads_by_id.get(lead_id) or {},
                         asset_pack=asset_pack,
                         channel=request.channel,
                     )[0],
                     "status": "sent",
+                }
+            )
+        )
+        for lead_id in request.lead_ids
+    ]
+    return created_outreach_logs
+
+
+@router.post("/outreach/draft", response_model=OutreachLogResponse)
+def create_outreach_draft_endpoint(request: OutreachRequest) -> OutreachLogResponse:
+    _validate_project(request.project_id)
+
+    outreach_log = _create_outreach_record(
+        project_id=request.project_id,
+        lead_id=request.lead_id,
+        asset_pack_id=request.asset_pack_id,
+        channel=request.channel,
+        status="draft",
+    )
+    return OutreachLogResponse(**outreach_log)
+
+
+@router.post("/outreach/draft/batch", response_model=list[OutreachLogResponse])
+def create_batch_outreach_draft_endpoint(
+    request: OutreachBatchRequest,
+) -> list[OutreachLogResponse]:
+    _validate_project(request.project_id)
+    if not request.lead_ids:
+        raise HTTPException(status_code=400, detail="Lead IDs list must not be empty")
+
+    asset_pack = _get_project_asset_pack(
+        project_id=request.project_id,
+        asset_pack_id=request.asset_pack_id,
+    )
+    leads_by_id = _get_project_leads(project_id=request.project_id, lead_ids=request.lead_ids)
+
+    created_outreach_logs = [
+        OutreachLogResponse(
+            **create_outreach_log(
+                {
+                    "project_id": request.project_id,
+                    "lead_id": lead_id,
+                    "asset_pack_id": request.asset_pack_id,
+                    "channel": request.channel,
+                    "message": generate_personalized_outreach(
+                        lead=leads_by_id.get(lead_id) or {},
+                        asset_pack=asset_pack,
+                        channel=request.channel,
+                    )[0],
+                    "status": "draft",
                 }
             )
         )
@@ -252,6 +319,32 @@ def list_outreach_endpoint(
         OutreachLogResponse(**outreach_log)
         for outreach_log in list_outreach_logs(project_id=project_id, lead_id=lead_id)
     ]
+
+
+@router.post("/outreach/{outreach_id}/mark-sent", response_model=OutreachMarkSentResponse)
+def mark_outreach_sent_endpoint(
+    outreach_id: str,
+    request: OutreachMarkSentRequest,
+) -> OutreachMarkSentResponse:
+    outreach_log = get_outreach_log_record(outreach_id)
+    if outreach_log is None:
+        raise HTTPException(status_code=404, detail="Outreach log not found")
+
+    updated_outreach = update_outreach_status(outreach_id=outreach_id, status="sent")
+    if updated_outreach is None:
+        raise HTTPException(status_code=404, detail="Outreach log not found")
+
+    updated_lead = None
+    if request.mark_lead_contacted:
+        updated_lead = update_lead(
+            lead_id=str(updated_outreach.get("lead_id") or ""),
+            updates={"status": "contacted"},
+        )
+
+    return OutreachMarkSentResponse(
+        outreach=OutreachLogResponse(**updated_outreach),
+        lead=LeadResponse(**updated_lead) if updated_lead is not None else None,
+    )
 
 
 @router.patch("/outreach/{outreach_id}", response_model=OutreachLogResponse)
