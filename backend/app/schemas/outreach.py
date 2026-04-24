@@ -13,6 +13,7 @@ class OutreachRequest(BaseModel):
     lead_id: str
     asset_pack_id: str
     channel: OutreachChannel = "email"
+    dedupe: bool = True
 
 
 class OutreachBatchRequest(BaseModel):
@@ -20,6 +21,7 @@ class OutreachBatchRequest(BaseModel):
     lead_ids: list[str]
     asset_pack_id: str
     channel: OutreachChannel = "email"
+    dedupe: bool = True
 
 
 class OutreachStatusUpdate(BaseModel):
@@ -41,6 +43,7 @@ class OutreachLogResponse(BaseModel):
     status: OutreachStatus
     reply_text: str | None = None
     created_at: str
+    deduped: bool = False
 
 
 class OutreachMarkSentResponse(BaseModel):

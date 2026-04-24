@@ -52,6 +52,10 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalized_match_value(value: str | None) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
 def load_projects() -> list[dict]:
     return _load_json_file(PROJECTS_FILE)
 
@@ -264,6 +268,49 @@ def create_lead(lead_data: dict) -> dict:
     return record
 
 
+def find_duplicate_lead(
+    project_id: str,
+    company_name: str,
+    contact_name: str,
+    contact_email: str,
+) -> dict | None:
+    normalized_project_id = str(project_id)
+    normalized_email = _normalized_match_value(contact_email)
+    normalized_company = _normalized_match_value(company_name)
+    normalized_contact = _normalized_match_value(contact_name)
+
+    for lead in load_leads():
+        if str(lead.get("project_id") or "") != normalized_project_id:
+            continue
+
+        lead_email = _normalized_match_value(str(lead.get("contact_email") or ""))
+        if normalized_email and lead_email == normalized_email:
+            return lead
+
+        lead_company = _normalized_match_value(str(lead.get("company_name") or ""))
+        lead_contact = _normalized_match_value(str(lead.get("contact_name") or ""))
+        if normalized_company and normalized_contact and (
+            lead_company == normalized_company and lead_contact == normalized_contact
+        ):
+            return lead
+
+    return None
+
+
+def create_or_get_lead(lead_data: dict, dedupe: bool = True) -> tuple[dict, bool]:
+    if dedupe:
+        existing_lead = find_duplicate_lead(
+            project_id=str(lead_data.get("project_id") or ""),
+            company_name=str(lead_data.get("company_name") or ""),
+            contact_name=str(lead_data.get("contact_name") or ""),
+            contact_email=str(lead_data.get("contact_email") or ""),
+        )
+        if existing_lead is not None:
+            return existing_lead, True
+
+    return create_lead(lead_data), False
+
+
 def list_leads(project_id: str | None = None) -> list[dict]:
     leads = load_leads()
     if project_id is None:
@@ -337,6 +384,44 @@ def create_outreach_log(outreach_log_data: dict) -> dict:
     outreach_logs.append(record)
     save_outreach_logs(outreach_logs)
     return record
+
+
+def find_matching_draft_outreach(
+    project_id: str,
+    lead_id: str,
+    asset_pack_id: str,
+    channel: str,
+) -> dict | None:
+    matching_drafts = [
+        outreach_log
+        for outreach_log in list_outreach_logs(project_id=project_id, lead_id=lead_id)
+        if str(outreach_log.get("asset_pack_id") or "") == asset_pack_id
+        and str(outreach_log.get("channel") or "") == channel
+        and str(outreach_log.get("status") or "") == "draft"
+    ]
+    if not matching_drafts:
+        return None
+    return sorted(
+        matching_drafts,
+        key=lambda outreach_log: (
+            str(outreach_log.get("created_at") or ""),
+            str(outreach_log.get("id") or ""),
+        ),
+    )[-1]
+
+
+def create_or_get_draft_outreach(outreach_log_data: dict, dedupe: bool = True) -> tuple[dict, bool]:
+    if dedupe:
+        existing_draft = find_matching_draft_outreach(
+            project_id=str(outreach_log_data.get("project_id") or ""),
+            lead_id=str(outreach_log_data.get("lead_id") or ""),
+            asset_pack_id=str(outreach_log_data.get("asset_pack_id") or ""),
+            channel=str(outreach_log_data.get("channel") or "email"),
+        )
+        if existing_draft is not None:
+            return existing_draft, True
+
+    return create_outreach_log(outreach_log_data), False
 
 
 def get_outreach_log_record(outreach_id: str) -> dict | None:

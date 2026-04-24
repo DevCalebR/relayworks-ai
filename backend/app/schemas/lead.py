@@ -10,6 +10,7 @@ class LeadCreate(BaseModel):
     company_name: str
     contact_name: str
     contact_email: str
+    dedupe: bool = True
     status: LeadStatus = "new"
     company_description: str | None = None
     industry: str | None = None
@@ -30,6 +31,7 @@ class LeadBatchItem(BaseModel):
 
 class LeadBatchCreate(BaseModel):
     project_id: str
+    dedupe: bool = True
     leads: list[LeadBatchItem]
 
 
@@ -53,3 +55,19 @@ class LeadResponse(BaseModel):
     website: str | None = None
     notes: str | None = None
     created_at: str
+    deduped: bool = False
+
+
+class LeadActivityOutreachItem(BaseModel):
+    id: str
+    status: str
+    channel: str
+    asset_pack_id: str
+    message: str
+    reply_text: str | None = None
+    created_at: str
+
+
+class LeadActivityResponse(BaseModel):
+    lead: LeadResponse
+    outreach: list[LeadActivityOutreachItem]

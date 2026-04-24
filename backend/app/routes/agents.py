@@ -18,8 +18,10 @@ from app.services.personalization_agent import generate_personalized_outreach
 from app.services.memory_service import (
     compare_best_runs,
     create_asset_pack_record,
+    create_or_get_draft_outreach,
     create_launch_plan_record,
     create_outreach_log,
+    find_matching_draft_outreach,
     get_asset_pack_record,
     get_lead_record,
     get_project,
@@ -36,6 +38,10 @@ from app.services.memory_service import (
 from app.services.orchestrator import run_agents
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+def _outreach_response(outreach_log: dict, deduped: bool = False) -> OutreachLogResponse:
+    return OutreachLogResponse(**{**outreach_log, "deduped": deduped})
 
 
 @router.post("/run", response_model=RunResponse)
@@ -172,7 +178,18 @@ def _create_outreach_record(
     asset_pack_id: str,
     channel: str,
     status: str = "sent",
+    dedupe: bool = False,
 ) -> dict:
+    if status == "draft" and dedupe:
+        existing_draft = find_matching_draft_outreach(
+            project_id=project_id,
+            lead_id=lead_id,
+            asset_pack_id=asset_pack_id,
+            channel=channel,
+        )
+        if existing_draft is not None:
+            return {**existing_draft, "deduped": True}
+
     lead = get_lead_record(lead_id=lead_id, project_id=project_id)
     if lead is None:
         raise HTTPException(status_code=404, detail=f"Lead not found for project: {lead_id}")
@@ -183,15 +200,22 @@ def _create_outreach_record(
         asset_pack=asset_pack,
         channel=channel,
     )
+    outreach_payload = {
+        "project_id": project_id,
+        "lead_id": lead_id,
+        "asset_pack_id": asset_pack_id,
+        "channel": channel,
+        "message": message,
+        "status": status,
+    }
+    if status == "draft":
+        outreach_log, deduped = create_or_get_draft_outreach(
+            outreach_payload,
+            dedupe=dedupe,
+        )
+        return {**outreach_log, "deduped": deduped}
     return create_outreach_log(
-        {
-            "project_id": project_id,
-            "lead_id": lead_id,
-            "asset_pack_id": asset_pack_id,
-            "channel": channel,
-            "message": message,
-            "status": status,
-        }
+        outreach_payload
     )
 
 
@@ -270,8 +294,12 @@ def create_outreach_draft_endpoint(request: OutreachRequest) -> OutreachLogRespo
         asset_pack_id=request.asset_pack_id,
         channel=request.channel,
         status="draft",
+        dedupe=request.dedupe,
     )
-    return OutreachLogResponse(**outreach_log)
+    return _outreach_response(
+        outreach_log,
+        deduped=bool(outreach_log.get("deduped", False)),
+    )
 
 
 @router.post("/outreach/draft/batch", response_model=list[OutreachLogResponse])
@@ -288,25 +316,37 @@ def create_batch_outreach_draft_endpoint(
     )
     leads_by_id = _get_project_leads(project_id=request.project_id, lead_ids=request.lead_ids)
 
-    created_outreach_logs = [
-        OutreachLogResponse(
-            **create_outreach_log(
-                {
-                    "project_id": request.project_id,
-                    "lead_id": lead_id,
-                    "asset_pack_id": request.asset_pack_id,
-                    "channel": request.channel,
-                    "message": generate_personalized_outreach(
-                        lead=leads_by_id.get(lead_id) or {},
-                        asset_pack=asset_pack,
-                        channel=request.channel,
-                    )[0],
-                    "status": "draft",
-                }
+    created_outreach_logs = []
+    for lead_id in request.lead_ids:
+        existing_draft = None
+        if request.dedupe:
+            existing_draft = find_matching_draft_outreach(
+                project_id=request.project_id,
+                lead_id=lead_id,
+                asset_pack_id=request.asset_pack_id,
+                channel=request.channel,
             )
+        if existing_draft is not None:
+            created_outreach_logs.append(_outreach_response(existing_draft, deduped=True))
+            continue
+
+        message = generate_personalized_outreach(
+            lead=leads_by_id.get(lead_id) or {},
+            asset_pack=asset_pack,
+            channel=request.channel,
+        )[0]
+        outreach_log, deduped = create_or_get_draft_outreach(
+            {
+                "project_id": request.project_id,
+                "lead_id": lead_id,
+                "asset_pack_id": request.asset_pack_id,
+                "channel": request.channel,
+                "message": message,
+                "status": "draft",
+            },
+            dedupe=request.dedupe,
         )
-        for lead_id in request.lead_ids
-    ]
+        created_outreach_logs.append(_outreach_response(outreach_log, deduped=deduped))
     return created_outreach_logs
 
 
