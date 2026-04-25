@@ -19,8 +19,10 @@ RUNS_FILE = DATA_DIR / "runs.json"
 LAUNCH_PLANS_FILE = DATA_DIR / "launch_plans.json"
 ASSET_PACKS_FILE = DATA_DIR / "asset_packs.json"
 LEADS_FILE = DATA_DIR / "leads.json"
+CANDIDATE_LEADS_FILE = DATA_DIR / "candidate_leads.json"
 OUTREACH_LOGS_FILE = DATA_DIR / "outreach_logs.json"
 OUTREACH_STATUSES = {"draft", "sent", "replied", "ignored"}
+CANDIDATE_LEAD_STATUSES = {"discovered", "imported", "rejected"}
 
 
 def _write_json_file(path: Path, records: list[dict]) -> None:
@@ -339,6 +341,131 @@ def update_lead(
                     lead[field] = str(updates[field]).strip() or None
             save_leads(leads)
             return lead
+    return None
+
+
+def normalize_candidate_lead_record(candidate_lead_data: dict) -> dict:
+    record = {
+        "id": str(candidate_lead_data.get("id") or f"candidate_{uuid4().hex[:12]}"),
+        "project_id": str(candidate_lead_data.get("project_id") or ""),
+        "company_name": str(candidate_lead_data.get("company_name") or "").strip(),
+        "contact_name": (
+            str(candidate_lead_data.get("contact_name")).strip()
+            if candidate_lead_data.get("contact_name") is not None
+            else None
+        ),
+        "contact_title": (
+            str(candidate_lead_data.get("contact_title")).strip()
+            if candidate_lead_data.get("contact_title") is not None
+            else None
+        ),
+        "contact_email": (
+            str(candidate_lead_data.get("contact_email")).strip().lower() or None
+            if candidate_lead_data.get("contact_email") is not None
+            else None
+        ),
+        "company_description": (
+            str(candidate_lead_data.get("company_description")).strip()
+            if candidate_lead_data.get("company_description") is not None
+            else None
+        ),
+        "industry": (
+            str(candidate_lead_data.get("industry")).strip()
+            if candidate_lead_data.get("industry") is not None
+            else None
+        ),
+        "website": (
+            str(candidate_lead_data.get("website")).strip()
+            if candidate_lead_data.get("website") is not None
+            else None
+        ),
+        "linkedin_url": (
+            str(candidate_lead_data.get("linkedin_url")).strip()
+            if candidate_lead_data.get("linkedin_url") is not None
+            else None
+        ),
+        "lead_source": (
+            str(candidate_lead_data.get("lead_source")).strip()
+            if candidate_lead_data.get("lead_source") is not None
+            else None
+        ),
+        "fit_reason": str(candidate_lead_data.get("fit_reason") or "").strip(),
+        "confidence_score": 5,
+        "status": "discovered",
+        "created_at": str(candidate_lead_data.get("created_at") or _now_iso()),
+    }
+    try:
+        score = int(candidate_lead_data.get("confidence_score"))
+    except (TypeError, ValueError):
+        score = 5
+    record["confidence_score"] = max(1, min(10, score))
+
+    status = str(candidate_lead_data.get("status") or "discovered")
+    if status not in CANDIDATE_LEAD_STATUSES:
+        status = "discovered"
+    record["status"] = status
+    return record
+
+
+def load_candidate_leads() -> list[dict]:
+    return [
+        normalize_candidate_lead_record(candidate_lead)
+        for candidate_lead in _load_json_file(CANDIDATE_LEADS_FILE)
+    ]
+
+
+def save_candidate_leads(candidate_leads: list[dict]) -> None:
+    _write_json_file(
+        CANDIDATE_LEADS_FILE,
+        [normalize_candidate_lead_record(candidate_lead) for candidate_lead in candidate_leads],
+    )
+
+
+def create_candidate_lead(candidate_lead_data: dict) -> dict:
+    candidate_leads = load_candidate_leads()
+    record = normalize_candidate_lead_record(candidate_lead_data)
+    candidate_leads.append(record)
+    save_candidate_leads(candidate_leads)
+    return record
+
+
+def list_candidate_leads(
+    project_id: str | None = None,
+    status: str | None = None,
+) -> list[dict]:
+    candidate_leads = load_candidate_leads()
+    if project_id is not None:
+        candidate_leads = [
+            candidate_lead
+            for candidate_lead in candidate_leads
+            if candidate_lead.get("project_id") == project_id
+        ]
+    if status is not None:
+        candidate_leads = [
+            candidate_lead
+            for candidate_lead in candidate_leads
+            if candidate_lead.get("status") == status
+        ]
+    return candidate_leads
+
+
+def get_candidate_lead_record(candidate_lead_id: str) -> dict | None:
+    for candidate_lead in load_candidate_leads():
+        if candidate_lead.get("id") == candidate_lead_id:
+            return candidate_lead
+    return None
+
+
+def update_candidate_lead_status(candidate_lead_id: str, status: str) -> dict | None:
+    if status not in CANDIDATE_LEAD_STATUSES:
+        return None
+
+    candidate_leads = load_candidate_leads()
+    for candidate_lead in candidate_leads:
+        if candidate_lead.get("id") == candidate_lead_id:
+            candidate_lead["status"] = status
+            save_candidate_leads(candidate_leads)
+            return normalize_candidate_lead_record(candidate_lead)
     return None
 
 
