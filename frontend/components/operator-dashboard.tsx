@@ -6,9 +6,13 @@ import { startTransition, useEffect, useState } from "react";
 import {
   API_BASE_URL,
   PROJECT_ID,
+  createBatchOutreachDrafts,
+  createOutreachDraft,
   discoverCandidateLeads,
   formatDateTime,
   formatWebsite,
+  generateAssetPack,
+  generateLaunchPlan,
   getAssetPacks,
   getBackendStatus,
   getCandidateLeads,
@@ -42,11 +46,11 @@ const DEFAULT_DISCOVERY_TARGET =
 const WORKFLOW_STEPS = [
   "Discover Candidates",
   "Import Leads",
-  "Review Drafts",
-  "Send Manually",
+  "Generate Asset Pack",
+  "Create Drafts",
+  "Review + Send Manually",
   "Mark Sent",
   "Follow Up",
-  "Track Replies",
 ];
 
 const LEAD_STATUSES: LeadStatus[] = [
@@ -70,6 +74,30 @@ function toErrorMessage(error: unknown): string {
     return error.message;
   }
   return "Something went wrong while loading this section.";
+}
+
+function getFriendlyGenerationError(error: unknown, action: "launch-plan" | "asset-pack"): string {
+  const message = toErrorMessage(error);
+  const normalized = message.toLowerCase();
+
+  if (action === "launch-plan") {
+    if (
+      normalized.includes("could not resolve a launch-plan source") ||
+      normalized.includes("could not resolve a launch plan source")
+    ) {
+      return "No top opportunity found yet. Run opportunity analysis first.";
+    }
+    return message;
+  }
+
+  if (
+    normalized.includes("no launch plan found for project") ||
+    normalized.includes("launch plan not found for project")
+  ) {
+    return "Generate a launch plan first.";
+  }
+
+  return message;
 }
 
 function getStatusTone(status: CandidateStatus | LeadStatus | OutreachStatus): string {
@@ -411,6 +439,50 @@ function ProjectCard() {
   );
 }
 
+function GenerationControlCard({
+  eyebrow,
+  title,
+  description,
+  buttonLabel,
+  loadingLabel,
+  disabled,
+  loading,
+  notice,
+  error,
+  onClick,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  buttonLabel: string;
+  loadingLabel: string;
+  disabled?: boolean;
+  loading: boolean;
+  notice: string | null;
+  error: string | null;
+  onClick: () => void;
+}) {
+  return (
+    <Card className="space-y-5">
+      <SectionHeading
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+      />
+      {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
+      {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || loading}
+        className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {loading ? loadingLabel : buttonLabel}
+      </button>
+    </Card>
+  );
+}
+
 function CandidateLeadCard({
   candidate,
   busy,
@@ -487,21 +559,54 @@ function LeadsTable({
   leads,
   loading,
   error,
+  notice,
+  actionError,
+  busyLeadId,
+  batchLoading,
   onRefresh,
+  onCreateDraft,
+  onCreateDraftsForNewLeads,
 }: {
   leads: Lead[] | null;
   loading: boolean;
   error: string | null;
+  notice: string | null;
+  actionError: string | null;
+  busyLeadId: string | null;
+  batchLoading: boolean;
   onRefresh: () => void;
+  onCreateDraft: (leadId: string) => void;
+  onCreateDraftsForNewLeads: () => void;
 }) {
+  const sortedLeads = leads ? sortNewestFirst(leads) : [];
+  const newLeadCount = sortedLeads.filter((lead) => lead.status === "new").length;
+
   return (
     <Card className="space-y-5">
       <SectionHeading
         eyebrow="Leads"
         title="Imported leads"
-        description="These are the leads already in the working pipeline. Once candidates are imported, they appear here and move through the manual outreach workflow."
-        action={<RefreshButton label="leads" onClick={onRefresh} disabled={loading} />}
+        description="These are the leads already in the working pipeline. New leads can generate email drafts from the latest asset pack, which makes the candidate-to-draft workflow visible in one place."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onCreateDraftsForNewLeads}
+              disabled={batchLoading}
+              className="inline-flex items-center justify-center rounded-full bg-emerald-900 px-4 py-2 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {batchLoading ? "Creating drafts..." : "Create Drafts for New Leads"}
+            </button>
+            <RefreshButton label="leads" onClick={onRefresh} disabled={loading} />
+          </div>
+        }
       />
+      <InlineNotice tone="info">
+        RelayWorks does not send emails automatically. It only creates drafts. Send
+        manually, then click Mark as Sent.
+      </InlineNotice>
+      {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
+      {actionError ? <InlineNotice tone="error">{actionError}</InlineNotice> : null}
       {error ? <DataError message={error} /> : null}
       {!leads && loading ? <p className="text-sm text-muted">Loading leads...</p> : null}
       {leads && leads.length === 0 ? (
@@ -522,10 +627,11 @@ function LeadsTable({
                 <th className="px-3">Industry</th>
                 <th className="px-3">Website</th>
                 <th className="px-3">Created</th>
+                <th className="px-3">Drafts</th>
               </tr>
             </thead>
             <tbody>
-              {sortNewestFirst(leads).map((lead) => (
+              {sortedLeads.map((lead) => (
                 <tr key={lead.id} className="rounded-3xl bg-white/65 text-sm text-foreground">
                   <td className="rounded-l-3xl px-3 py-4 font-semibold">{lead.company_name}</td>
                   <td className="px-3 py-4">{lead.contact_name || "No verified contact yet"}</td>
@@ -535,12 +641,37 @@ function LeadsTable({
                   </td>
                   <td className="px-3 py-4">{lead.industry || "Unknown"}</td>
                   <td className="px-3 py-4">{formatWebsite(lead.website)}</td>
-                  <td className="rounded-r-3xl px-3 py-4">{formatDateTime(lead.created_at)}</td>
+                  <td className="px-3 py-4">{formatDateTime(lead.created_at)}</td>
+                  <td className="rounded-r-3xl px-3 py-4">
+                    {lead.status === "new" ? (
+                      <button
+                        type="button"
+                        disabled={busyLeadId === lead.id}
+                        onClick={() => onCreateDraft(lead.id)}
+                        className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {busyLeadId === lead.id ? "Creating..." : "Create Draft"}
+                      </button>
+                    ) : (
+                      <span className="text-sm text-muted">
+                        {lead.status === "contacted"
+                          ? "Already contacted"
+                          : "Not available"}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      ) : null}
+      {leads && leads.length > 0 ? (
+        <p className="text-sm text-muted">
+          {newLeadCount === 0
+            ? "No new leads need drafts right now."
+            : `${newLeadCount} new lead${newLeadCount === 1 ? "" : "s"} can generate drafts from the latest asset pack.`}
+        </p>
       ) : null}
     </Card>
   );
@@ -792,12 +923,22 @@ export function OperatorDashboard() {
   const launchPlans = useResource(getLaunchPlans);
 
   const [candidateNotice, setCandidateNotice] = useState<string | null>(null);
+  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [assetPackNotice, setAssetPackNotice] = useState<string | null>(null);
+  const [assetPackError, setAssetPackError] = useState<string | null>(null);
+  const [leadNotice, setLeadNotice] = useState<string | null>(null);
+  const [leadActionError, setLeadActionError] = useState<string | null>(null);
   const [outreachNotice, setOutreachNotice] = useState<string | null>(null);
   const [candidateActionError, setCandidateActionError] = useState<string | null>(null);
   const [outreachActionError, setOutreachActionError] = useState<string | null>(null);
   const [busyCandidateId, setBusyCandidateId] = useState<string | null>(null);
+  const [busyLeadId, setBusyLeadId] = useState<string | null>(null);
   const [busyOutreachId, setBusyOutreachId] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
+  const [generatingLaunchPlan, setGeneratingLaunchPlan] = useState(false);
+  const [generatingAssetPack, setGeneratingAssetPack] = useState(false);
+  const [creatingBatchDrafts, setCreatingBatchDrafts] = useState(false);
   const [target, setTarget] = useState(DEFAULT_DISCOVERY_TARGET);
   const [count, setCount] = useState(5);
 
@@ -833,7 +974,9 @@ export function OperatorDashboard() {
 
     try {
       await importCandidateLead(candidateLeadId);
-      setCandidateNotice("Candidate imported into leads.");
+      setCandidateNotice(
+        "Candidate imported. You can now create an outreach draft from the Leads section.",
+      );
       startTransition(() => {
         void Promise.all([candidates.refresh(), leads.refresh(), metrics.refresh()]);
       });
@@ -859,6 +1002,114 @@ export function OperatorDashboard() {
       setCandidateActionError(toErrorMessage(error));
     } finally {
       setBusyCandidateId(null);
+    }
+  }
+
+  async function handleGenerateLaunchPlan() {
+    setGeneratingLaunchPlan(true);
+    setGenerationNotice(null);
+    setGenerationError(null);
+
+    try {
+      const launchPlan = await generateLaunchPlan();
+      setGenerationNotice(`Launch plan generated: ${launchPlan.headline}`);
+      startTransition(() => {
+        void launchPlans.refresh();
+      });
+    } catch (error) {
+      setGenerationError(getFriendlyGenerationError(error, "launch-plan"));
+    } finally {
+      setGeneratingLaunchPlan(false);
+    }
+  }
+
+  async function handleGenerateAssetPack() {
+    setGeneratingAssetPack(true);
+    setAssetPackNotice(null);
+    setAssetPackError(null);
+
+    try {
+      const assetPack = await generateAssetPack();
+      setAssetPackNotice(`Asset pack generated: ${assetPack.headline}`);
+      startTransition(() => {
+        void assetPacks.refresh();
+      });
+    } catch (error) {
+      setAssetPackError(getFriendlyGenerationError(error, "asset-pack"));
+    } finally {
+      setGeneratingAssetPack(false);
+    }
+  }
+
+  async function handleCreateDraft(leadId: string) {
+    setBusyLeadId(leadId);
+    setLeadNotice(null);
+    setLeadActionError(null);
+
+    if (!latestAssetPack) {
+      setLeadActionError("Generate an asset pack first.");
+      setBusyLeadId(null);
+      return;
+    }
+
+    try {
+      const outreachDraft = await createOutreachDraft({
+        leadId,
+        assetPackId: latestAssetPack.id,
+      });
+      setLeadNotice(
+        outreachDraft.deduped
+          ? "A matching draft already existed for that lead."
+          : "Draft created for the selected lead.",
+      );
+      startTransition(() => {
+        void Promise.all([outreach.refresh(), leads.refresh(), metrics.refresh()]);
+      });
+    } catch (error) {
+      setLeadActionError(toErrorMessage(error));
+    } finally {
+      setBusyLeadId(null);
+    }
+  }
+
+  async function handleCreateDraftsForNewLeads() {
+    setCreatingBatchDrafts(true);
+    setLeadNotice(null);
+    setLeadActionError(null);
+
+    if (!latestAssetPack) {
+      setLeadActionError("Generate an asset pack first.");
+      setCreatingBatchDrafts(false);
+      return;
+    }
+
+    const newLeadIds = (leads.data ?? [])
+      .filter((lead) => lead.status === "new")
+      .map((lead) => lead.id);
+
+    if (newLeadIds.length === 0) {
+      setLeadNotice("No new leads need drafts.");
+      setCreatingBatchDrafts(false);
+      return;
+    }
+
+    try {
+      const outreachDrafts = await createBatchOutreachDrafts({
+        leadIds: newLeadIds,
+        assetPackId: latestAssetPack.id,
+      });
+      const dedupedCount = outreachDrafts.filter((draft) => draft.deduped).length;
+      const createdCount = outreachDrafts.length - dedupedCount;
+      setLeadNotice(
+        `Draft batch complete. ${createdCount} created, ${dedupedCount} deduped.`,
+      );
+      startTransition(() => {
+        void Promise.all([outreach.refresh(), metrics.refresh(), leads.refresh()]);
+      });
+    } catch (error) {
+      setLeadActionError(toErrorMessage(error));
+    } finally {
+      setCreatingBatchDrafts(false);
     }
   }
 
@@ -950,6 +1201,31 @@ export function OperatorDashboard() {
           />
         </section>
 
+        <section className="section-grid grid gap-6 xl:grid-cols-2">
+          <GenerationControlCard
+            eyebrow="Launch"
+            title="Generate Launch Plan"
+            description="Use the current project and its top opportunity to generate a fresh launch plan without writing JSON by hand."
+            buttonLabel="Generate Launch Plan"
+            loadingLabel="Generating launch plan..."
+            loading={generatingLaunchPlan}
+            notice={generationNotice}
+            error={generationError}
+            onClick={handleGenerateLaunchPlan}
+          />
+          <GenerationControlCard
+            eyebrow="Assets"
+            title="Generate Asset Pack"
+            description="Use the latest launch plan to create the latest messaging package that powers outreach draft generation."
+            buttonLabel="Generate Asset Pack"
+            loadingLabel="Generating asset pack..."
+            loading={generatingAssetPack}
+            notice={assetPackNotice}
+            error={assetPackError}
+            onClick={handleGenerateAssetPack}
+          />
+        </section>
+
         <Card className="space-y-6">
           <SectionHeading
             eyebrow="Candidates"
@@ -1034,7 +1310,13 @@ export function OperatorDashboard() {
           leads={leads.data}
           loading={leads.loading}
           error={leads.error}
+          notice={leadNotice}
+          actionError={leadActionError}
+          busyLeadId={busyLeadId}
+          batchLoading={creatingBatchDrafts}
           onRefresh={leads.refresh}
+          onCreateDraft={handleCreateDraft}
+          onCreateDraftsForNewLeads={handleCreateDraftsForNewLeads}
         />
 
         <section className="space-y-4">

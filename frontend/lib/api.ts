@@ -131,6 +131,16 @@ interface CandidateImportResponse {
   lead: Lead;
 }
 
+interface OutreachDraftRequest {
+  leadId: string;
+  assetPackId: string;
+}
+
+interface OutreachDraftBatchRequest {
+  leadIds: string[];
+  assetPackId: string;
+}
+
 interface OutreachMarkSentResponse {
   outreach: OutreachRecord;
   lead: Lead | null;
@@ -288,9 +298,63 @@ export async function getLeads(): Promise<Lead[]> {
   });
 }
 
+export async function generateLaunchPlan(): Promise<LaunchPlan> {
+  return requestJson<LaunchPlan>({
+    path: "/agents/launch-plan",
+    method: "POST",
+    body: JSON.stringify({
+      project_id: PROJECT_ID,
+      use_top_opportunity: true,
+    }),
+  });
+}
+
+export async function generateAssetPack(): Promise<AssetPack> {
+  return requestJson<AssetPack>({
+    path: "/agents/asset-pack",
+    method: "POST",
+    body: JSON.stringify({
+      project_id: PROJECT_ID,
+      use_latest_launch_plan: true,
+    }),
+  });
+}
+
 export async function getOutreachRecords(): Promise<OutreachRecord[]> {
   return requestJson<OutreachRecord[]>({
     path: withProjectId("/agents/outreach"),
+  });
+}
+
+export async function createOutreachDraft(
+  payload: OutreachDraftRequest,
+): Promise<OutreachRecord> {
+  return requestJson<OutreachRecord>({
+    path: "/agents/outreach/draft",
+    method: "POST",
+    body: JSON.stringify({
+      project_id: PROJECT_ID,
+      lead_id: payload.leadId,
+      asset_pack_id: payload.assetPackId,
+      channel: "email",
+      dedupe: true,
+    }),
+  });
+}
+
+export async function createBatchOutreachDrafts(
+  payload: OutreachDraftBatchRequest,
+): Promise<OutreachRecord[]> {
+  return requestJson<OutreachRecord[]>({
+    path: "/agents/outreach/draft/batch",
+    method: "POST",
+    body: JSON.stringify({
+      project_id: PROJECT_ID,
+      lead_ids: payload.leadIds,
+      asset_pack_id: payload.assetPackId,
+      channel: "email",
+      dedupe: true,
+    }),
   });
 }
 
