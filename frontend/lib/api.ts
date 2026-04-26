@@ -10,6 +10,11 @@ export type CandidateStatus = "discovered" | "imported" | "rejected";
 export type LeadStatus = "new" | "contacted" | "replied" | "interested" | "closed";
 export type OutreachStatus = "draft" | "sent" | "replied" | "ignored";
 export type OutreachChannel = "email" | "linkedin" | "other";
+export type OperatorMode =
+  | "research_operator"
+  | "content_operator"
+  | "leadgen_operator"
+  | "product_operator";
 
 export interface BackendRootResponse {
   message: string;
@@ -117,13 +122,77 @@ export interface LaunchPlan {
   id: string;
   project_id: string;
   source_run_id: string;
+  mode: OperatorMode;
+  selected_opportunity: Opportunity;
   headline: string;
   ideal_customer_profile: string;
+  painful_problem_statement: string;
   offer_summary: string;
+  mvp_scope: string[];
   pricing_hypothesis: string;
+  acquisition_channels: string[];
   sales_motion: string;
+  first_30_day_plan: string[];
+  success_metrics: string[];
+  biggest_risks: string[];
+  mitigation_steps: string[];
   launch_recommendation: string;
   created_at: string;
+}
+
+export interface Opportunity {
+  title: string;
+  niche: string;
+  target_customer: string;
+  core_problem: string;
+  offer: string;
+  mvp: string;
+  distribution_channel: string;
+  monetization_model: string;
+  opportunity_score: number;
+  confidence_score: number;
+  reasoning: string;
+  next_actions: string[];
+}
+
+export interface ComparedOpportunity extends Opportunity {
+  run_id: string;
+  mode: OperatorMode;
+  created_at: string;
+}
+
+export interface RunResponse {
+  id: string;
+  project_id: string;
+  objective: string;
+  mode: OperatorMode;
+  niche: string;
+  target_customer: string;
+  core_problem: string;
+  offer: string;
+  mvp: string;
+  distribution_channel: string;
+  monetization_model: string;
+  opportunity_score: number;
+  confidence_score: number;
+  reasoning: string;
+  next_actions: string[];
+  opportunities: Opportunity[];
+  best_opportunity: Opportunity;
+  research_summary: string;
+  strategy_summary: string;
+  execution_output: string;
+  status: string;
+  created_at: string;
+}
+
+export interface OpportunityComparison {
+  project_id: string;
+  total_runs: number;
+  total_opportunities: number;
+  message: string | null;
+  top_opportunity: ComparedOpportunity | null;
+  ranked_opportunities: ComparedOpportunity[];
 }
 
 interface CandidateImportResponse {
@@ -149,6 +218,12 @@ interface OutreachMarkSentResponse {
 interface CandidateDiscoveryRequest {
   target: string;
   count: number;
+}
+
+interface OpportunityAnalysisRequest {
+  objective: string;
+  mode: OperatorMode;
+  numOpportunities: number;
 }
 
 function buildUrl(path: string): string {
@@ -298,12 +373,38 @@ export async function getLeads(): Promise<Lead[]> {
   });
 }
 
-export async function generateLaunchPlan(): Promise<LaunchPlan> {
+export async function runOpportunityAnalysis(
+  payload: OpportunityAnalysisRequest,
+): Promise<RunResponse> {
+  return requestJson<RunResponse>({
+    path: "/agents/run",
+    method: "POST",
+    body: JSON.stringify({
+      project_id: PROJECT_ID,
+      objective: payload.objective,
+      mode: payload.mode,
+      num_opportunities: payload.numOpportunities,
+    }),
+  });
+}
+
+export async function compareOpportunities(
+  mode?: OperatorMode,
+): Promise<OpportunityComparison> {
+  return requestJson<OpportunityComparison>({
+    path: `${withProjectId("/agents/compare")}${
+      mode ? `&mode=${encodeURIComponent(mode)}` : ""
+    }`,
+  });
+}
+
+export async function generateLaunchPlan(mode?: OperatorMode): Promise<LaunchPlan> {
   return requestJson<LaunchPlan>({
     path: "/agents/launch-plan",
     method: "POST",
     body: JSON.stringify({
       project_id: PROJECT_ID,
+      ...(mode ? { mode } : {}),
       use_top_opportunity: true,
     }),
   });

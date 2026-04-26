@@ -6,6 +6,7 @@ import { startTransition, useEffect, useState } from "react";
 import {
   API_BASE_URL,
   PROJECT_ID,
+  compareOpportunities,
   createBatchOutreachDrafts,
   createOutreachDraft,
   discoverCandidateLeads,
@@ -26,6 +27,7 @@ import {
   markOutreachSent,
   previewMessage,
   rejectCandidateLead,
+  runOpportunityAnalysis,
   sortNewestFirst,
   type AssetPack,
   type BackendStatusResponse,
@@ -35,6 +37,8 @@ import {
   type LaunchPlan,
   type Lead,
   type LeadStatus,
+  type OperatorMode,
+  type OpportunityComparison,
   type OutreachRecord,
   type OutreachStatus,
   type PipelineMetrics,
@@ -42,13 +46,24 @@ import {
 
 const DEFAULT_DISCOVERY_TARGET =
   "Seed to Series B B2B SaaS companies likely to care about win-loss analysis, revenue operations, sales process improvement, and closed-lost learning loops";
+const DEFAULT_ANALYSIS_OBJECTIVE =
+  "Find the best fast-to-market profitable AI operator business opportunity";
+const OPERATOR_MODES: OperatorMode[] = [
+  "research_operator",
+  "content_operator",
+  "leadgen_operator",
+  "product_operator",
+];
+type ComparisonModeFilter = OperatorMode | "all";
 
 const WORKFLOW_STEPS = [
+  "Run Opportunity Analysis",
+  "Generate Launch Plan",
+  "Generate Asset Pack",
   "Discover Candidates",
   "Import Leads",
-  "Generate Asset Pack",
   "Create Drafts",
-  "Review + Send Manually",
+  "Send Manually",
   "Mark Sent",
   "Follow Up",
 ];
@@ -450,6 +465,7 @@ function GenerationControlCard({
   notice,
   error,
   onClick,
+  children,
 }: {
   eyebrow: string;
   title: string;
@@ -461,6 +477,7 @@ function GenerationControlCard({
   notice: string | null;
   error: string | null;
   onClick: () => void;
+  children?: ReactNode;
 }) {
   return (
     <Card className="space-y-5">
@@ -471,6 +488,7 @@ function GenerationControlCard({
       />
       {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
       {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+      {children}
       <button
         type="button"
         onClick={onClick}
@@ -479,6 +497,279 @@ function GenerationControlCard({
       >
         {loading ? loadingLabel : buttonLabel}
       </button>
+    </Card>
+  );
+}
+
+function OpportunitySummaryCard({
+  comparison,
+  loading,
+  error,
+  selectedMode,
+  onModeChange,
+  onRefresh,
+}: {
+  comparison: OpportunityComparison | null;
+  loading: boolean;
+  error: string | null;
+  selectedMode: ComparisonModeFilter;
+  onModeChange: (mode: ComparisonModeFilter) => void;
+  onRefresh: () => void;
+}) {
+  const topOpportunity = comparison?.top_opportunity ?? null;
+  const rankedOpportunities = comparison?.ranked_opportunities ?? [];
+
+  return (
+    <Card className="space-y-6">
+      <SectionHeading
+        eyebrow="Opportunity"
+        title="Top Opportunity"
+        description="Compare recent opportunity analysis runs, review the current best option, and keep launch-plan generation anchored to the strongest idea on screen."
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 rounded-full border border-border bg-white/70 px-3 py-2 text-sm text-foreground">
+              <span className="font-semibold">Mode</span>
+              <select
+                value={selectedMode}
+                onChange={(event) => onModeChange(event.target.value as ComparisonModeFilter)}
+                className="bg-transparent text-sm outline-none"
+              >
+                <option value="all">All modes</option>
+                {OPERATOR_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {humanize(mode)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <RefreshButton
+              label="top opportunity"
+              onClick={onRefresh}
+              disabled={loading}
+            />
+          </div>
+        }
+      />
+      {error ? <DataError message={error} /> : null}
+      {comparison ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <StatTile label="Analysis runs" value={comparison.total_runs} />
+          <StatTile label="Ranked opportunities" value={comparison.total_opportunities} accent />
+        </div>
+      ) : null}
+      {!comparison && loading ? (
+        <p className="text-sm text-muted">Loading opportunity comparison...</p>
+      ) : null}
+      {!topOpportunity && !loading && !error ? (
+        <EmptyState
+          title="No opportunity analysis found yet."
+          description="Run an analysis first to compare opportunities and generate a launch plan from the current top result."
+        />
+      ) : null}
+      {topOpportunity ? (
+        <div className="space-y-5">
+          <div className="rounded-[26px] border border-emerald-200 bg-emerald-50/70 p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge label="Current top opportunity" tone="bg-emerald-200 text-emerald-950" />
+                  <Badge
+                    label={`Opportunity ${topOpportunity.opportunity_score}/10`}
+                    tone="bg-white text-stone-900"
+                  />
+                  <Badge
+                    label={`Confidence ${topOpportunity.confidence_score}/10`}
+                    tone="bg-white text-stone-900"
+                  />
+                  <Badge label={humanize(topOpportunity.mode)} tone="bg-white text-stone-900" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-semibold tracking-tight text-foreground">
+                    {topOpportunity.title}
+                  </h3>
+                  <p className="mt-1 text-sm text-muted">
+                    Run {topOpportunity.run_id} · {formatDateTime(topOpportunity.created_at)}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <InfoField label="Niche" value={topOpportunity.niche} />
+              <InfoField label="Target customer" value={topOpportunity.target_customer} />
+              <InfoField label="Core problem" value={topOpportunity.core_problem} />
+              <InfoField label="Offer" value={topOpportunity.offer} />
+              <InfoField label="MVP" value={topOpportunity.mvp} />
+              <InfoField
+                label="Distribution channel"
+                value={topOpportunity.distribution_channel}
+              />
+              <InfoField
+                label="Monetization model"
+                value={topOpportunity.monetization_model}
+              />
+            </div>
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+              <InfoField
+                label="Reasoning"
+                value={topOpportunity.reasoning}
+                preserveWhitespace
+              />
+              <div className="space-y-2">
+                <p className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted">
+                  Next actions
+                </p>
+                <div className="rounded-3xl border border-border bg-white/75 px-4 py-4">
+                  <ol className="space-y-2 text-sm leading-6 text-foreground">
+                    {topOpportunity.next_actions.map((action, index) => (
+                      <li key={`${topOpportunity.run_id}-${action}`} className="flex gap-3">
+                        <span className="font-semibold text-emerald-900">{index + 1}.</span>
+                        <span>{action}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {rankedOpportunities.length > 0 ? (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-foreground">Ranked opportunities</h3>
+                <p className="text-sm text-muted">Compact view of the current comparison set.</p>
+              </div>
+              <div className="space-y-3">
+                {rankedOpportunities.map((opportunity, index) => (
+                  <article
+                    key={`${opportunity.run_id}-${opportunity.title}-${index}`}
+                    className="rounded-3xl border border-border bg-white/65 px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-stone-900 text-sm font-semibold text-stone-50">
+                          {index + 1}
+                        </span>
+                        <div>
+                          <p className="text-base font-semibold text-foreground">
+                            {opportunity.title}
+                          </p>
+                          <p className="text-sm text-muted">{opportunity.niche}</p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                          label={`Opportunity ${opportunity.opportunity_score}/10`}
+                          tone="bg-emerald-100 text-emerald-900"
+                        />
+                        <Badge
+                          label={`Confidence ${opportunity.confidence_score}/10`}
+                          tone="bg-sky-100 text-sky-900"
+                        />
+                        <Badge
+                          label={humanize(opportunity.mode)}
+                          tone="bg-stone-200 text-stone-900"
+                        />
+                        <Badge
+                          label={`Run ${opportunity.run_id}`}
+                          tone="bg-white text-stone-900"
+                        />
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function OpportunityAnalysisCard({
+  objective,
+  mode,
+  numOpportunities,
+  loading,
+  notice,
+  error,
+  onObjectiveChange,
+  onModeChange,
+  onNumOpportunitiesChange,
+  onSubmit,
+}: {
+  objective: string;
+  mode: OperatorMode;
+  numOpportunities: number;
+  loading: boolean;
+  notice: string | null;
+  error: string | null;
+  onObjectiveChange: (value: string) => void;
+  onModeChange: (mode: OperatorMode) => void;
+  onNumOpportunitiesChange: (value: number) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Card className="space-y-6">
+      <SectionHeading
+        eyebrow="Opportunity"
+        title="Run Opportunity Analysis"
+        description="Start the operator workflow visually. This form calls the existing backend endpoint and refreshes the current opportunity comparison after a successful run."
+      />
+      {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
+      {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+      <form onSubmit={onSubmit} className="space-y-4">
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold text-foreground">Objective</span>
+          <textarea
+            value={objective}
+            onChange={(event) => onObjectiveChange(event.target.value)}
+            rows={6}
+            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-emerald-500"
+          />
+        </label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">Mode</span>
+            <select
+              value={mode}
+              onChange={(event) => onModeChange(event.target.value as OperatorMode)}
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            >
+              {OPERATOR_MODES.map((option) => (
+                <option key={option} value={option}>
+                  {humanize(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">Number of opportunities</span>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={numOpportunities}
+              onChange={(event) =>
+                onNumOpportunitiesChange(
+                  Math.min(5, Math.max(1, Number(event.target.value) || 1)),
+                )
+              }
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            />
+          </label>
+        </div>
+        <InlineNotice tone="info">
+          The dashboard sends a simple form payload to <span className="font-mono">POST /agents/run</span>. No JSON editing required.
+        </InlineNotice>
+        <button
+          type="submit"
+          disabled={loading}
+          className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "Running analysis..." : "Run Analysis"}
+        </button>
+      </form>
     </Card>
   );
 }
@@ -922,6 +1213,17 @@ export function OperatorDashboard() {
   const assetPacks = useResource(getAssetPacks);
   const launchPlans = useResource(getLaunchPlans);
 
+  const [analysisObjective, setAnalysisObjective] = useState(DEFAULT_ANALYSIS_OBJECTIVE);
+  const [analysisMode, setAnalysisMode] = useState<OperatorMode>("research_operator");
+  const [analysisNumOpportunities, setAnalysisNumOpportunities] = useState(3);
+  const [runningAnalysis, setRunningAnalysis] = useState(false);
+  const [analysisNotice, setAnalysisNotice] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [comparisonMode, setComparisonMode] = useState<ComparisonModeFilter>("all");
+  const [opportunityComparison, setOpportunityComparison] =
+    useState<OpportunityComparison | null>(null);
+  const [comparisonLoading, setComparisonLoading] = useState(true);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
   const [candidateNotice, setCandidateNotice] = useState<string | null>(null);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -944,6 +1246,91 @@ export function OperatorDashboard() {
 
   const latestAssetPack = assetPacks.data ? getLatestRecord(assetPacks.data) : null;
   const latestLaunchPlan = launchPlans.data ? getLatestRecord(launchPlans.data) : null;
+  const currentTopOpportunity = opportunityComparison?.top_opportunity ?? null;
+  const currentLaunchPlanMode =
+    comparisonMode === "all" ? undefined : comparisonMode;
+
+  async function refreshOpportunityComparison(mode: ComparisonModeFilter = comparisonMode) {
+    setComparisonLoading(true);
+    try {
+      const next = await compareOpportunities(mode === "all" ? undefined : mode);
+      setOpportunityComparison(next);
+      setComparisonError(null);
+    } catch (error) {
+      setComparisonError(toErrorMessage(error));
+    } finally {
+      setComparisonLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadComparison() {
+      setComparisonLoading(true);
+      try {
+        const next = await compareOpportunities(
+          comparisonMode === "all" ? undefined : comparisonMode,
+        );
+        if (!active) {
+          return;
+        }
+        setOpportunityComparison(next);
+        setComparisonError(null);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setComparisonError(toErrorMessage(error));
+      } finally {
+        if (active) {
+          setComparisonLoading(false);
+        }
+      }
+    }
+
+    void loadComparison();
+
+    return () => {
+      active = false;
+    };
+  }, [comparisonMode]);
+
+  async function handleRunOpportunityAnalysis(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRunningAnalysis(true);
+    setAnalysisNotice(null);
+    setAnalysisError(null);
+
+    const trimmedObjective = analysisObjective.trim();
+    if (!trimmedObjective) {
+      setAnalysisError("Add an objective before running opportunity analysis.");
+      setRunningAnalysis(false);
+      return;
+    }
+
+    try {
+      const run = await runOpportunityAnalysis({
+        objective: trimmedObjective,
+        mode: analysisMode,
+        numOpportunities: analysisNumOpportunities,
+      });
+      setAnalysisNotice(
+        `Analysis complete for ${humanize(run.mode)}. Top opportunity refreshed below. You can now generate a launch plan.`,
+      );
+      if (comparisonMode !== run.mode) {
+        setComparisonMode(run.mode);
+      } else {
+        startTransition(() => {
+          void refreshOpportunityComparison(run.mode);
+        });
+      }
+    } catch (error) {
+      setAnalysisError(toErrorMessage(error));
+    } finally {
+      setRunningAnalysis(false);
+    }
+  }
 
   async function handleDiscoverCandidates(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1006,13 +1393,29 @@ export function OperatorDashboard() {
   }
 
   async function handleGenerateLaunchPlan() {
+    if (comparisonLoading) {
+      setGenerationError("Top opportunity is still loading. Try again in a moment.");
+      setGenerationNotice(null);
+      return;
+    }
+
+    if (!currentTopOpportunity) {
+      setGenerationError(
+        comparisonError ?? "No top opportunity found yet. Run opportunity analysis first.",
+      );
+      setGenerationNotice(null);
+      return;
+    }
+
     setGeneratingLaunchPlan(true);
     setGenerationNotice(null);
     setGenerationError(null);
 
     try {
-      const launchPlan = await generateLaunchPlan();
-      setGenerationNotice(`Launch plan generated: ${launchPlan.headline}`);
+      const launchPlan = await generateLaunchPlan(currentLaunchPlanMode);
+      setGenerationNotice(
+        `Launch plan generated from ${currentTopOpportunity.title}: ${launchPlan.headline}`,
+      );
       startTransition(() => {
         void launchPlans.refresh();
       });
@@ -1152,9 +1555,10 @@ export function OperatorDashboard() {
                     Operate the RelayWorks AI backend without curl.
                   </h1>
                   <p className="max-w-3xl text-base leading-7 text-stone-100/92 sm:text-lg">
-                    RelayWorks AI helps you find an opportunity, create an offer,
-                    discover candidate leads, import leads, generate outreach drafts,
-                    manually send them, and track follow-ups.
+                    RelayWorks AI helps you run opportunity analysis, turn the top result
+                    into a launch plan, build messaging assets, discover candidate leads,
+                    import leads, generate outreach drafts, manually send them, and track
+                    follow-ups.
                   </p>
                 </div>
               </div>
@@ -1202,17 +1606,64 @@ export function OperatorDashboard() {
         </section>
 
         <section className="section-grid grid gap-6 xl:grid-cols-2">
+          <OpportunityAnalysisCard
+            objective={analysisObjective}
+            mode={analysisMode}
+            numOpportunities={analysisNumOpportunities}
+            loading={runningAnalysis}
+            notice={analysisNotice}
+            error={analysisError}
+            onObjectiveChange={setAnalysisObjective}
+            onModeChange={setAnalysisMode}
+            onNumOpportunitiesChange={setAnalysisNumOpportunities}
+            onSubmit={handleRunOpportunityAnalysis}
+          />
+          <OpportunitySummaryCard
+            comparison={opportunityComparison}
+            loading={comparisonLoading}
+            error={comparisonError}
+            selectedMode={comparisonMode}
+            onModeChange={setComparisonMode}
+            onRefresh={() => {
+              void refreshOpportunityComparison();
+            }}
+          />
+        </section>
+
+        <section className="section-grid grid gap-6 xl:grid-cols-2">
           <GenerationControlCard
             eyebrow="Launch"
             title="Generate Launch Plan"
-            description="Use the current project and its top opportunity to generate a fresh launch plan without writing JSON by hand."
+            description="Use the current top opportunity to generate a fresh launch plan without writing JSON by hand."
             buttonLabel="Generate Launch Plan"
             loadingLabel="Generating launch plan..."
+            disabled={!comparisonError && (comparisonLoading || !currentTopOpportunity)}
             loading={generatingLaunchPlan}
             notice={generationNotice}
             error={generationError}
             onClick={handleGenerateLaunchPlan}
-          />
+          >
+            <InlineNotice tone="info">
+              Launch plans are generated from the current top opportunity.
+            </InlineNotice>
+            {currentTopOpportunity ? (
+              <div className="rounded-3xl border border-border bg-white/65 px-4 py-4">
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
+                  Current source
+                </p>
+                <p className="mt-2 text-base font-semibold text-foreground">
+                  {currentTopOpportunity.title}
+                </p>
+                <p className="mt-1 text-sm text-muted">
+                  {humanize(currentTopOpportunity.mode)} · Run {currentTopOpportunity.run_id}
+                </p>
+              </div>
+            ) : (
+              <InlineNotice tone="warning">
+                No top opportunity found yet. Run opportunity analysis first.
+              </InlineNotice>
+            )}
+          </GenerationControlCard>
           <GenerationControlCard
             eyebrow="Assets"
             title="Generate Asset Pack"
