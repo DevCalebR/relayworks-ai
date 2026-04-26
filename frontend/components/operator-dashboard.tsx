@@ -7,6 +7,7 @@ import {
   API_BASE_URL,
   PROJECT_ID,
   compareOpportunities,
+  createLead,
   createBatchOutreachDrafts,
   createOutreachDraft,
   discoverCandidateLeads,
@@ -78,10 +79,52 @@ const LEAD_STATUSES: LeadStatus[] = [
 
 const OUTREACH_STATUSES: OutreachStatus[] = ["draft", "sent", "replied", "ignored"];
 
+type ManualLeadFormState = {
+  companyName: string;
+  contactName: string;
+  contactEmail: string;
+  industry: string;
+  website: string;
+  companyDescription: string;
+  notes: string;
+};
+
+const EMPTY_MANUAL_LEAD_FORM: ManualLeadFormState = {
+  companyName: "",
+  contactName: "",
+  contactEmail: "",
+  industry: "",
+  website: "",
+  companyDescription: "",
+  notes: "",
+};
+
 function humanize(value: string): string {
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function isValidEmailAddress(value: string): boolean {
+  return value.includes("@") && value.includes(".");
+}
+
+function getWebsiteValidationMessage(value: string): string | null {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return null;
+  }
+
+  const normalizedValue = trimmedValue.replace(/^https?:\/\//, "");
+  if (!normalizedValue) {
+    return "Add a website like relayworks.ai or leave the field empty.";
+  }
+
+  if (/\s/.test(trimmedValue)) {
+    return "Website should not contain spaces.";
+  }
+
+  return null;
 }
 
 function toErrorMessage(error: unknown): string {
@@ -846,6 +889,129 @@ function CandidateLeadCard({
   );
 }
 
+function ManualLeadFormCard({
+  form,
+  loading,
+  notice,
+  error,
+  fieldError,
+  onChange,
+  onSubmit,
+}: {
+  form: ManualLeadFormState;
+  loading: boolean;
+  notice: string | null;
+  error: string | null;
+  fieldError: string | null;
+  onChange: (field: keyof ManualLeadFormState, value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Card className="space-y-5">
+      <SectionHeading
+        eyebrow="Leads"
+        title="Add Lead Manually"
+        description="Add a real lead directly into the current project without curl, seed file edits, or candidate import."
+      />
+      <InlineNotice tone="warning">
+        Only add leads you are allowed to contact. RelayWorks creates drafts, but you still send manually.
+      </InlineNotice>
+      {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
+      {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+      {fieldError ? <InlineNotice tone="error">{fieldError}</InlineNotice> : null}
+      <form onSubmit={onSubmit} className="space-y-4">
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold text-foreground">
+            Company name <span className="text-rose-700">*</span>
+          </span>
+          <input
+            type="text"
+            value={form.companyName}
+            onChange={(event) => onChange("companyName", event.target.value)}
+            placeholder="Acme Industrial"
+            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+          />
+        </label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">Contact name</span>
+            <input
+              type="text"
+              value={form.contactName}
+              onChange={(event) => onChange("contactName", event.target.value)}
+              placeholder="Jordan Lee"
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            />
+          </label>
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">Contact email</span>
+            <input
+              type="text"
+              value={form.contactEmail}
+              onChange={(event) => onChange("contactEmail", event.target.value)}
+              placeholder="jordan@acme.com"
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            />
+          </label>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">Industry</span>
+            <input
+              type="text"
+              value={form.industry}
+              onChange={(event) => onChange("industry", event.target.value)}
+              placeholder="Manufacturing"
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            />
+          </label>
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">Website</span>
+            <input
+              type="text"
+              value={form.website}
+              onChange={(event) => onChange("website", event.target.value)}
+              placeholder="acme.com"
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            />
+          </label>
+        </div>
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold text-foreground">Company description</span>
+          <textarea
+            value={form.companyDescription}
+            onChange={(event) => onChange("companyDescription", event.target.value)}
+            rows={4}
+            placeholder="What the company does and why it fits the offer."
+            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-emerald-500"
+          />
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold text-foreground">Notes</span>
+          <textarea
+            value={form.notes}
+            onChange={(event) => onChange("notes", event.target.value)}
+            rows={4}
+            placeholder="Anything helpful for manual outreach later."
+            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-emerald-500"
+          />
+        </label>
+        <p className="text-xs leading-5 text-muted">
+          Project: <span className="font-mono">{PROJECT_ID}</span> · Status:{" "}
+          <span className="font-mono">new</span> · Dedupe: <span className="font-mono">true</span>
+        </p>
+        <button
+          type="submit"
+          disabled={loading}
+          className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "Adding lead..." : "Add Lead"}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
 function LeadsTable({
   leads,
   loading,
@@ -854,6 +1020,7 @@ function LeadsTable({
   actionError,
   busyLeadId,
   batchLoading,
+  highlightedLeadId,
   onRefresh,
   onCreateDraft,
   onCreateDraftsForNewLeads,
@@ -865,12 +1032,22 @@ function LeadsTable({
   actionError: string | null;
   busyLeadId: string | null;
   batchLoading: boolean;
+  highlightedLeadId: string | null;
   onRefresh: () => void;
   onCreateDraft: (leadId: string) => void;
   onCreateDraftsForNewLeads: () => void;
 }) {
   const sortedLeads = leads ? sortNewestFirst(leads) : [];
   const newLeadCount = sortedLeads.filter((lead) => lead.status === "new").length;
+
+  useEffect(() => {
+    if (!highlightedLeadId || !leads || leads.length === 0) {
+      return;
+    }
+
+    const row = document.getElementById(`lead-row-${highlightedLeadId}`);
+    row?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedLeadId, leads]);
 
   return (
     <Card className="space-y-5">
@@ -923,7 +1100,15 @@ function LeadsTable({
             </thead>
             <tbody>
               {sortedLeads.map((lead) => (
-                <tr key={lead.id} className="rounded-3xl bg-white/65 text-sm text-foreground">
+                <tr
+                  key={lead.id}
+                  id={`lead-row-${lead.id}`}
+                  className={`rounded-3xl text-sm text-foreground ${
+                    highlightedLeadId === lead.id
+                      ? "bg-emerald-50/95 ring-1 ring-emerald-300"
+                      : "bg-white/65"
+                  }`}
+                >
                   <td className="rounded-l-3xl px-3 py-4 font-semibold">{lead.company_name}</td>
                   <td className="px-3 py-4">{lead.contact_name || "No verified contact yet"}</td>
                   <td className="px-3 py-4">{lead.contact_email.trim() || "No email yet"}</td>
@@ -934,22 +1119,29 @@ function LeadsTable({
                   <td className="px-3 py-4">{formatWebsite(lead.website)}</td>
                   <td className="px-3 py-4">{formatDateTime(lead.created_at)}</td>
                   <td className="rounded-r-3xl px-3 py-4">
-                    {lead.status === "new" ? (
-                      <button
-                        type="button"
-                        disabled={busyLeadId === lead.id}
-                        onClick={() => onCreateDraft(lead.id)}
-                        className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {busyLeadId === lead.id ? "Creating..." : "Create Draft"}
-                      </button>
-                    ) : (
-                      <span className="text-sm text-muted">
-                        {lead.status === "contacted"
-                          ? "Already contacted"
-                          : "Not available"}
-                      </span>
-                    )}
+                    <div className="space-y-2">
+                      {lead.status === "new" ? (
+                        <button
+                          type="button"
+                          disabled={busyLeadId === lead.id}
+                          onClick={() => onCreateDraft(lead.id)}
+                          className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {busyLeadId === lead.id ? "Creating..." : "Create Draft"}
+                        </button>
+                      ) : (
+                        <span className="text-sm text-muted">
+                          {lead.status === "contacted"
+                            ? "Already contacted"
+                            : "Not available"}
+                        </span>
+                      )}
+                      {highlightedLeadId === lead.id ? (
+                        <p className="max-w-[18rem] text-xs font-medium leading-5 text-emerald-900">
+                          Next: create an outreach draft for this lead.
+                        </p>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1231,6 +1423,14 @@ export function OperatorDashboard() {
   const [assetPackError, setAssetPackError] = useState<string | null>(null);
   const [leadNotice, setLeadNotice] = useState<string | null>(null);
   const [leadActionError, setLeadActionError] = useState<string | null>(null);
+  const [manualLeadNotice, setManualLeadNotice] = useState<string | null>(null);
+  const [manualLeadError, setManualLeadError] = useState<string | null>(null);
+  const [manualLeadForm, setManualLeadForm] = useState<ManualLeadFormState>(
+    EMPTY_MANUAL_LEAD_FORM,
+  );
+  const [manualLeadFieldError, setManualLeadFieldError] = useState<string | null>(null);
+  const [creatingLead, setCreatingLead] = useState(false);
+  const [highlightedLeadId, setHighlightedLeadId] = useState<string | null>(null);
   const [outreachNotice, setOutreachNotice] = useState<string | null>(null);
   const [candidateActionError, setCandidateActionError] = useState<string | null>(null);
   const [outreachActionError, setOutreachActionError] = useState<string | null>(null);
@@ -1441,6 +1641,82 @@ export function OperatorDashboard() {
       setAssetPackError(getFriendlyGenerationError(error, "asset-pack"));
     } finally {
       setGeneratingAssetPack(false);
+    }
+  }
+
+  function updateManualLeadForm(field: keyof ManualLeadFormState, value: string) {
+    setManualLeadForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+
+    if (manualLeadFieldError) {
+      setManualLeadFieldError(null);
+    }
+    if (manualLeadError) {
+      setManualLeadError(null);
+    }
+  }
+
+  async function handleCreateLead(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCreatingLead(true);
+    setManualLeadNotice(null);
+    setManualLeadError(null);
+    setManualLeadFieldError(null);
+
+    const companyName = manualLeadForm.companyName.trim();
+    const contactName = manualLeadForm.contactName.trim();
+    const contactEmail = manualLeadForm.contactEmail.trim();
+    const industry = manualLeadForm.industry.trim();
+    const website = manualLeadForm.website.trim();
+    const companyDescription = manualLeadForm.companyDescription.trim();
+    const notes = manualLeadForm.notes.trim();
+
+    if (!companyName) {
+      setManualLeadFieldError("Add a company name before creating the lead.");
+      setCreatingLead(false);
+      return;
+    }
+
+    if (contactEmail && !isValidEmailAddress(contactEmail)) {
+      setManualLeadFieldError("Add a valid-looking email address or leave it empty.");
+      setCreatingLead(false);
+      return;
+    }
+
+    const websiteValidationMessage = getWebsiteValidationMessage(website);
+    if (websiteValidationMessage) {
+      setManualLeadFieldError(websiteValidationMessage);
+      setCreatingLead(false);
+      return;
+    }
+
+    try {
+      const lead = await createLead({
+        companyName,
+        contactName,
+        contactEmail,
+        industry,
+        website,
+        companyDescription,
+        notes,
+      });
+
+      setHighlightedLeadId(lead.id);
+      await Promise.all([leads.refresh(), metrics.refresh()]);
+
+      if (lead.deduped) {
+        setManualLeadNotice("Lead already exists. Showing the existing lead.");
+        return;
+      }
+
+      setManualLeadNotice("Lead added. Next: create an outreach draft for this lead.");
+      setManualLeadForm(EMPTY_MANUAL_LEAD_FORM);
+    } catch (error) {
+      setManualLeadError(toErrorMessage(error));
+    } finally {
+      setCreatingLead(false);
     }
   }
 
@@ -1757,18 +2033,30 @@ export function OperatorDashboard() {
           </div>
         </Card>
 
-        <LeadsTable
-          leads={leads.data}
-          loading={leads.loading}
-          error={leads.error}
-          notice={leadNotice}
-          actionError={leadActionError}
-          busyLeadId={busyLeadId}
-          batchLoading={creatingBatchDrafts}
-          onRefresh={leads.refresh}
-          onCreateDraft={handleCreateDraft}
-          onCreateDraftsForNewLeads={handleCreateDraftsForNewLeads}
-        />
+        <section className="section-grid grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <ManualLeadFormCard
+            form={manualLeadForm}
+            loading={creatingLead}
+            notice={manualLeadNotice}
+            error={manualLeadError}
+            fieldError={manualLeadFieldError}
+            onChange={updateManualLeadForm}
+            onSubmit={handleCreateLead}
+          />
+          <LeadsTable
+            leads={leads.data}
+            loading={leads.loading}
+            error={leads.error}
+            notice={leadNotice}
+            actionError={leadActionError}
+            busyLeadId={busyLeadId}
+            batchLoading={creatingBatchDrafts}
+            highlightedLeadId={highlightedLeadId}
+            onRefresh={leads.refresh}
+            onCreateDraft={handleCreateDraft}
+            onCreateDraftsForNewLeads={handleCreateDraftsForNewLeads}
+          />
+        </section>
 
         <section className="space-y-4">
           {outreachNotice ? <InlineNotice tone="success">{outreachNotice}</InlineNotice> : null}

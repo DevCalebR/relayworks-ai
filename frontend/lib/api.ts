@@ -200,6 +200,16 @@ interface CandidateImportResponse {
   lead: Lead;
 }
 
+interface CreateLeadRequest {
+  companyName: string;
+  contactName?: string;
+  contactEmail?: string;
+  industry?: string;
+  website?: string;
+  companyDescription?: string;
+  notes?: string;
+}
+
 interface OutreachDraftRequest {
   leadId: string;
   assetPackId: string;
@@ -370,6 +380,25 @@ export async function rejectCandidateLead(candidateLeadId: string): Promise<Cand
 export async function getLeads(): Promise<Lead[]> {
   return requestJson<Lead[]>({
     path: withProjectId("/leads"),
+  });
+}
+
+export async function createLead(payload: CreateLeadRequest): Promise<Lead> {
+  return requestJson<Lead>({
+    path: "/leads",
+    method: "POST",
+    body: JSON.stringify({
+      project_id: PROJECT_ID,
+      company_name: payload.companyName,
+      contact_name: payload.contactName ?? "",
+      contact_email: payload.contactEmail ?? "",
+      industry: payload.industry ?? "",
+      website: payload.website ?? "",
+      company_description: payload.companyDescription ?? "",
+      notes: payload.notes ?? "",
+      status: "new",
+      dedupe: true,
+    }),
   });
 }
 
