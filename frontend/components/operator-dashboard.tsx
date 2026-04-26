@@ -7,8 +7,8 @@ import {
   API_BASE_URL,
   PROJECT_ID,
   compareOpportunities,
-  createLead,
   createBatchOutreachDrafts,
+  createLead,
   createOutreachDraft,
   discoverCandidateLeads,
   formatDateTime,
@@ -49,35 +49,27 @@ const DEFAULT_DISCOVERY_TARGET =
   "Seed to Series B B2B SaaS companies likely to care about win-loss analysis, revenue operations, sales process improvement, and closed-lost learning loops";
 const DEFAULT_ANALYSIS_OBJECTIVE =
   "Find the best fast-to-market profitable AI operator business opportunity";
+const DEMO_PROJECT_ID = "proj_952a38d1f320";
 const OPERATOR_MODES: OperatorMode[] = [
   "research_operator",
   "content_operator",
   "leadgen_operator",
   "product_operator",
 ];
-type ComparisonModeFilter = OperatorMode | "all";
-
-const WORKFLOW_STEPS = [
-  "Run Opportunity Analysis",
-  "Generate Launch Plan",
-  "Generate Asset Pack",
-  "Discover Candidates",
-  "Import Leads",
-  "Create Drafts",
-  "Send Manually",
-  "Mark Sent",
-  "Follow Up",
-];
-
-const LEAD_STATUSES: LeadStatus[] = [
-  "new",
-  "contacted",
-  "replied",
-  "interested",
-  "closed",
-];
-
 const OUTREACH_STATUSES: OutreachStatus[] = ["draft", "sent", "replied", "ignored"];
+
+type DashboardTab =
+  | "home"
+  | "opportunity"
+  | "leads"
+  | "drafts"
+  | "followups"
+  | "assets"
+  | "metrics"
+  | "advanced";
+
+type ComparisonModeFilter = OperatorMode | "all";
+type WorkflowState = "done" | "current" | "not_started";
 
 type ManualLeadFormState = {
   companyName: string;
@@ -87,6 +79,15 @@ type ManualLeadFormState = {
   website: string;
   companyDescription: string;
   notes: string;
+};
+
+type NextStepRecommendation = {
+  title: string;
+  description: string;
+  ctaLabel: string;
+  tab: DashboardTab;
+  sectionId?: string;
+  refreshOnly?: boolean;
 };
 
 const EMPTY_MANUAL_LEAD_FORM: ManualLeadFormState = {
@@ -99,10 +100,64 @@ const EMPTY_MANUAL_LEAD_FORM: ManualLeadFormState = {
   notes: "",
 };
 
+const DASHBOARD_TABS: { id: DashboardTab; label: string }[] = [
+  { id: "home", label: "Home" },
+  { id: "opportunity", label: "Opportunity" },
+  { id: "leads", label: "Leads" },
+  { id: "drafts", label: "Drafts" },
+  { id: "followups", label: "Follow-ups" },
+  { id: "assets", label: "Assets" },
+  { id: "metrics", label: "Metrics" },
+  { id: "advanced", label: "Advanced" },
+];
+
+const WORKFLOW_LABELS = [
+  {
+    title: "Pick an opportunity",
+    description: "Choose the business idea you want to pursue first.",
+  },
+  {
+    title: "Generate launch plan",
+    description: "Turn the best idea into a practical business plan.",
+  },
+  {
+    title: "Generate asset pack",
+    description: "Create your sales materials and messaging.",
+  },
+  {
+    title: "Find or add leads",
+    description: "Build the list of companies or people you may contact.",
+  },
+  {
+    title: "Create drafts",
+    description: "Generate first-pass outreach messages.",
+  },
+  {
+    title: "Send manually",
+    description: "Copy the message and send it yourself.",
+  },
+  {
+    title: "Mark sent",
+    description: "Tell the app which message you already sent.",
+  },
+  {
+    title: "Follow up",
+    description: "Check replies and decide the next manual step.",
+  },
+];
+
+function classNames(...values: Array<string | false | null | undefined>) {
+  return values.filter(Boolean).join(" ");
+}
+
 function humanize(value: string): string {
   return value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return count === 1 ? singular : plural;
 }
 
 function isValidEmailAddress(value: string): boolean {
@@ -143,7 +198,7 @@ function getFriendlyGenerationError(error: unknown, action: "launch-plan" | "ass
       normalized.includes("could not resolve a launch-plan source") ||
       normalized.includes("could not resolve a launch plan source")
     ) {
-      return "No top opportunity found yet. Run opportunity analysis first.";
+      return "No top opportunity found yet. Find Business Ideas first.";
     }
     return message;
   }
@@ -152,7 +207,7 @@ function getFriendlyGenerationError(error: unknown, action: "launch-plan" | "ass
     normalized.includes("no launch plan found for project") ||
     normalized.includes("launch plan not found for project")
   ) {
-    return "Generate a launch plan first.";
+    return "Create a Business Plan first.";
   }
 
   return message;
@@ -175,9 +230,31 @@ function getStatusTone(status: CandidateStatus | LeadStatus | OutreachStatus): s
     case "interested":
       return "bg-sky-100 text-sky-900";
     case "closed":
-      return "bg-slate-200 text-slate-800";
+      return "bg-stone-200 text-stone-800";
     default:
       return "bg-stone-200 text-stone-800";
+  }
+}
+
+function getWorkflowTone(state: WorkflowState): string {
+  switch (state) {
+    case "done":
+      return "bg-emerald-100 text-emerald-900";
+    case "current":
+      return "bg-amber-100 text-amber-950";
+    default:
+      return "bg-stone-200 text-stone-700";
+  }
+}
+
+function getWorkflowLabel(state: WorkflowState): string {
+  switch (state) {
+    case "done":
+      return "Done";
+    case "current":
+      return "Current";
+    default:
+      return "Not started";
   }
 }
 
@@ -199,16 +276,43 @@ function Badge({
   );
 }
 
+function Card({
+  id,
+  className,
+  highlighted,
+  children,
+}: {
+  id?: string;
+  className?: string;
+  highlighted?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      id={id}
+      className={classNames(
+        "glass-panel rounded-[28px] p-6 scroll-mt-28 transition",
+        highlighted && "ring-2 ring-emerald-400 ring-offset-2 ring-offset-transparent",
+        className,
+      )}
+    >
+      {children}
+    </section>
+  );
+}
+
 function SectionHeading({
   eyebrow,
   title,
   description,
   action,
+  technicalLabel,
 }: {
   eyebrow: string;
   title: string;
   description: string;
   action?: ReactNode;
+  technicalLabel?: string;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -217,44 +321,16 @@ function SectionHeading({
           {eyebrow}
         </p>
         <div className="space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h2>
+            {technicalLabel ? <Badge label={technicalLabel} tone="bg-white/80 text-stone-700" /> : null}
+          </div>
           <p className="max-w-3xl text-sm leading-6 text-muted">{description}</p>
         </div>
       </div>
       {action}
     </div>
   );
-}
-
-function RefreshButton({
-  label,
-  onClick,
-  disabled,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex items-center justify-center rounded-full border border-border bg-white/70 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      {disabled ? `Refreshing ${label}...` : `Refresh ${label}`}
-    </button>
-  );
-}
-
-function Card({
-  className,
-  children,
-}: {
-  className?: string;
-  children: ReactNode;
-}) {
-  return <section className={`glass-panel rounded-[28px] p-6 ${className ?? ""}`}>{children}</section>;
 }
 
 function InlineNotice({
@@ -295,21 +371,30 @@ function InfoField({
   label,
   value,
   preserveWhitespace,
+  action,
+  secondaryValue,
 }: {
   label: string;
   value: string;
   preserveWhitespace?: boolean;
+  action?: ReactNode;
+  secondaryValue?: string;
 }) {
   return (
-    <div className="space-y-1">
-      <p className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted">{label}</p>
+    <div className="space-y-2 rounded-3xl border border-border bg-white/60 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted">{label}</p>
+        {action}
+      </div>
       <p
-        className={`text-sm leading-6 text-foreground ${
-          preserveWhitespace ? "whitespace-pre-wrap" : ""
-        }`}
+        className={classNames(
+          "text-sm leading-6 text-foreground",
+          preserveWhitespace && "whitespace-pre-wrap",
+        )}
       >
         {value}
       </p>
+      {secondaryValue ? <p className="text-xs leading-5 text-muted">{secondaryValue}</p> : null}
     </div>
   );
 }
@@ -318,60 +403,394 @@ function DataError({ message }: { message: string }) {
   return <InlineNotice tone="error">{message}</InlineNotice>;
 }
 
-function useResource<T>(load: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+function RefreshButton({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex items-center justify-center rounded-full border border-border bg-white/80 px-4 py-2 text-sm font-semibold text-foreground transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {disabled ? `Refreshing ${label}...` : `Refresh ${label}`}
+    </button>
+  );
+}
 
-  useEffect(() => {
-    let active = true;
+function PrimaryButton({
+  label,
+  onClick,
+  disabled,
+  loadingLabel,
+  loading,
+  fullWidth,
+  type = "button",
+}: {
+  label: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  loadingLabel?: string;
+  loading?: boolean;
+  fullWidth?: boolean;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled || loading}
+      className={classNames(
+        "inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60",
+        fullWidth && "w-full",
+      )}
+    >
+      {loading ? loadingLabel ?? `${label}...` : label}
+    </button>
+  );
+}
 
-    async function loadInitially() {
-      try {
-        const next = await load();
-        if (!active) {
-          return;
-        }
-        setData(next);
-        setError(null);
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-        setError(toErrorMessage(error));
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
+function CopyButton({
+  copyKey,
+  copiedKey,
+  value,
+  onCopy,
+}: {
+  copyKey: string;
+  copiedKey: string | null;
+  value: string;
+  onCopy: (copyKey: string, value: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onCopy(copyKey, value)}
+      className="rounded-full border border-border bg-white px-3 py-1.5 text-xs font-semibold text-foreground transition hover:bg-stone-100"
+    >
+      {copiedKey === copyKey ? "Copied." : "Copy"}
+    </button>
+  );
+}
 
-    void loadInitially();
+function StatTile({
+  label,
+  value,
+  accent,
+  description,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+  description?: string;
+}) {
+  return (
+    <div
+      className={classNames(
+        "rounded-3xl border px-4 py-4",
+        accent ? "border-emerald-200 bg-emerald-50/70" : "border-border bg-white/65",
+      )}
+    >
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">{label}</p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+      {description ? <p className="mt-2 text-sm leading-6 text-muted">{description}</p> : null}
+    </div>
+  );
+}
 
-    return () => {
-      active = false;
-    };
-  }, [load]);
+function TabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={classNames(
+        "rounded-full px-4 py-2.5 text-sm font-semibold transition",
+        active
+          ? "bg-stone-900 text-stone-50 shadow-sm"
+          : "bg-white/65 text-foreground hover:bg-white",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
 
-  async function refresh() {
-    setLoading(true);
-    try {
-      const next = await load();
-      setData(next);
-      setError(null);
-    } catch (error) {
-      setError(toErrorMessage(error));
-    } finally {
-      setLoading(false);
-    }
-  }
+function ActionCard({
+  id,
+  highlighted,
+  eyebrow,
+  title,
+  description,
+  helperText,
+  buttonLabel,
+  loadingLabel,
+  loading,
+  disabled,
+  notice,
+  error,
+  onClick,
+  children,
+  technicalLabel,
+}: {
+  id: string;
+  highlighted?: boolean;
+  eyebrow: string;
+  title: string;
+  description: string;
+  helperText: string;
+  buttonLabel: string;
+  loadingLabel: string;
+  loading: boolean;
+  disabled?: boolean;
+  notice: string | null;
+  error: string | null;
+  onClick: () => void;
+  children?: ReactNode;
+  technicalLabel?: string;
+}) {
+  return (
+    <Card id={id} highlighted={highlighted} className="space-y-5">
+      <SectionHeading
+        eyebrow={eyebrow}
+        title={title}
+        description={description}
+        technicalLabel={technicalLabel}
+      />
+      <p className="text-sm leading-6 text-muted">{helperText}</p>
+      {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
+      {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
+      {children}
+      <PrimaryButton
+        label={buttonLabel}
+        loadingLabel={loadingLabel}
+        loading={loading}
+        disabled={disabled}
+        onClick={onClick}
+      />
+    </Card>
+  );
+}
 
-  return {
-    data,
-    error,
-    loading,
-    refresh,
-  };
+function HomeStartHereCard({ demoMode }: { demoMode: boolean }) {
+  return (
+    <Card className="space-y-5">
+      <SectionHeading
+        eyebrow="Start Here"
+        title="Start Here"
+        description="RelayWorks helps you choose an offer, find or add leads, create outreach drafts, manually send them, and track follow-ups."
+      />
+      {demoMode ? (
+        <InlineNotice tone="info">
+          Demo/local mode: This dashboard is using local JSON data. Use the reset script if you
+          want a clean demo state.
+        </InlineNotice>
+      ) : null}
+      <p className="text-base leading-7 text-foreground">
+        The app does not send emails for you. It creates drafts. You review and send them
+        manually, then mark them as sent.
+      </p>
+    </Card>
+  );
+}
+
+function NextStepCard({
+  recommendation,
+  onOpen,
+  onRefreshBackend,
+}: {
+  recommendation: NextStepRecommendation;
+  onOpen: (tab: DashboardTab, sectionId?: string) => void;
+  onRefreshBackend: () => void;
+}) {
+  return (
+    <Card className="space-y-5">
+      <SectionHeading
+        eyebrow="Guidance"
+        title="What should I do next?"
+        description="This recommendation looks at the current project data and points you to the next best operator action."
+      />
+      <div className="rounded-[26px] border border-emerald-200 bg-emerald-50/70 p-5">
+        <Badge label="Recommended next step" tone="bg-emerald-200 text-emerald-950" />
+        <h3 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">
+          {recommendation.title}
+        </h3>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">{recommendation.description}</p>
+        <div className="mt-5">
+          <PrimaryButton
+            label={recommendation.ctaLabel}
+            onClick={() => {
+              if (recommendation.refreshOnly) {
+                onRefreshBackend();
+                return;
+              }
+              onOpen(recommendation.tab, recommendation.sectionId);
+            }}
+          />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function WorkflowChecklist({
+  states,
+}: {
+  states: WorkflowState[];
+}) {
+  return (
+    <Card className="space-y-5">
+      <SectionHeading
+        eyebrow="Checklist"
+        title="Your Workflow"
+        description="Move through these steps from left to right. The current step is the one RelayWorks thinks needs your attention next."
+      />
+      <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+        {WORKFLOW_LABELS.map((step, index) => (
+          <article key={step.title} className="rounded-3xl border border-border bg-white/65 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-stone-900 text-sm font-semibold text-stone-50">
+                  {index + 1}
+                </span>
+                <div>
+                  <p className="text-base font-semibold text-foreground">{step.title}</p>
+                </div>
+              </div>
+              <Badge label={getWorkflowLabel(states[index] ?? "not_started")} tone={getWorkflowTone(states[index] ?? "not_started")} />
+            </div>
+            <p className="mt-3 text-sm leading-6 text-muted">{step.description}</p>
+          </article>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function StatusCard({
+  status,
+  loading,
+  error,
+  highlighted,
+}: {
+  status: BackendStatusResponse | null;
+  loading: boolean;
+  error: string | null;
+  highlighted?: boolean;
+}) {
+  return (
+    <Card id="backend-status" highlighted={highlighted} className="space-y-4">
+      <SectionHeading
+        eyebrow="Backend"
+        title="Backend Status"
+        description="RelayWorks needs the local FastAPI backend running before anything else will work."
+      />
+      {error ? <DataError message={error} /> : null}
+      {!status && loading ? <p className="text-sm text-muted">Checking backend status...</p> : null}
+      {status ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge
+              label={status.online ? "Online" : "Offline"}
+              tone={status.online ? "bg-emerald-100 text-emerald-900" : "bg-rose-100 text-rose-900"}
+            />
+            <p className="font-mono text-xs text-muted">{API_BASE_URL}</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <InfoField label="Root response" value={status.root.message} />
+            <InfoField label="Health check" value={`status: ${status.health.status}`} />
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function HomeMetricsCard({
+  candidateCount,
+  leadCount,
+  draftCount,
+  followUpCount,
+}: {
+  candidateCount: number;
+  leadCount: number;
+  draftCount: number;
+  followUpCount: number;
+}) {
+  return (
+    <Card className="space-y-5">
+      <SectionHeading
+        eyebrow="Overview"
+        title="Key Metrics"
+        description="These counts help you understand what is waiting for review right now."
+      />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile label="Possible leads to review" value={candidateCount} />
+        <StatTile label="Leads in pipeline" value={leadCount} accent />
+        <StatTile label="Drafts waiting" value={draftCount} />
+        <StatTile label="Follow-ups due" value={followUpCount} />
+      </div>
+    </Card>
+  );
+}
+
+function HomeOpportunityCard({
+  topOpportunity,
+  loading,
+  error,
+  onOpenOpportunity,
+}: {
+  topOpportunity: OpportunityComparison["top_opportunity"];
+  loading: boolean;
+  error: string | null;
+  onOpenOpportunity: () => void;
+}) {
+  return (
+    <Card className="space-y-5">
+      <SectionHeading
+        eyebrow="Current Focus"
+        title="Current Top Opportunity"
+        description="This is the business idea the system would use for the next Business Plan."
+      />
+      {error ? <DataError message={error} /> : null}
+      {!topOpportunity && loading ? <p className="text-sm text-muted">Loading opportunity data...</p> : null}
+      {!topOpportunity && !loading && !error ? (
+        <EmptyState
+          title="No business idea selected yet"
+          description="Go to the Opportunity tab and use Find Business Ideas to create a ranked list."
+        />
+      ) : null}
+      {topOpportunity ? (
+        <div className="space-y-4 rounded-[26px] border border-emerald-200 bg-emerald-50/70 p-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge label="Top opportunity" tone="bg-emerald-200 text-emerald-950" />
+            <Badge label={`Score ${topOpportunity.opportunity_score}/10`} tone="bg-white text-stone-900" />
+            <Badge label={`Confidence ${topOpportunity.confidence_score}/10`} tone="bg-white text-stone-900" />
+          </div>
+          <div>
+            <h3 className="text-2xl font-semibold text-foreground">{topOpportunity.title}</h3>
+            <p className="mt-1 text-sm text-muted">
+              {topOpportunity.target_customer} · {formatDateTime(topOpportunity.created_at)}
+            </p>
+          </div>
+          <p className="text-sm leading-6 text-muted">{topOpportunity.reasoning}</p>
+          <PrimaryButton label="Open Opportunity Tab" onClick={onOpenOpportunity} />
+        </div>
+      ) : null}
+    </Card>
+  );
 }
 
 function MetricsCard({
@@ -388,85 +807,35 @@ function MetricsCard({
   return (
     <Card className="space-y-5">
       <SectionHeading
-        eyebrow="Pipeline"
-        title="Pipeline metrics"
-        description="Counts come directly from the current project snapshot so the operator can see draft, sent, and lead status totals without opening JSON files."
+        eyebrow="Metrics"
+        title="Pipeline Metrics"
+        description="Use this tab to understand how many leads and messages are at each stage."
         action={<RefreshButton label="metrics" onClick={onRefresh} disabled={loading} />}
       />
       {error ? <DataError message={error} /> : null}
       {!metrics && loading ? <p className="text-sm text-muted">Loading pipeline metrics...</p> : null}
       {metrics ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {LEAD_STATUSES.map((status) => (
-            <StatTile
-              key={status}
-              label={`Leads · ${humanize(status)}`}
-              value={metrics.lead_counts[status]}
-            />
-          ))}
-          <StatTile label="Leads · Total" value={metrics.lead_counts.total} accent />
-          {OUTREACH_STATUSES.map((status) => (
-            <StatTile
-              key={status}
-              label={`Outreach · ${humanize(status)}`}
-              value={metrics.outreach_counts[status]}
-            />
-          ))}
-          <StatTile label="Outreach · Total" value={metrics.outreach_counts.total} accent />
-        </div>
-      ) : null}
-    </Card>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: number;
-  accent?: boolean;
-}) {
-  return (
-    <div
-      className={`rounded-3xl border px-4 py-4 ${
-        accent ? "border-emerald-200 bg-emerald-50/70" : "border-border bg-white/65"
-      }`}
-    >
-      <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">{label}</p>
-      <p className="mt-3 text-3xl font-semibold tracking-tight text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function StatusCard({
-  status,
-  loading,
-  error,
-}: {
-  status: BackendStatusResponse | null;
-  loading: boolean;
-  error: string | null;
-}) {
-  return (
-    <Card className="space-y-4">
-      <SectionHeading
-        eyebrow="Backend"
-        title="Local API status"
-        description="This panel calls the FastAPI root endpoint and health endpoint from the browser."
-      />
-      {error ? <DataError message={error} /> : null}
-      {!status && loading ? <p className="text-sm text-muted">Checking backend status...</p> : null}
-      {status ? (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Badge label={status.online ? "Online" : "Offline"} tone={status.online ? "bg-emerald-100 text-emerald-900" : "bg-rose-100 text-rose-900"} />
-            <p className="font-mono text-xs text-muted">{API_BASE_URL}</p>
+        <div className="space-y-5">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Leads</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <StatTile label="New" value={metrics.lead_counts.new} description="Ready for draft creation." />
+              <StatTile label="Contacted" value={metrics.lead_counts.contacted} description="Marked sent after manual outreach." />
+              <StatTile label="Replied" value={metrics.lead_counts.replied} description="Someone responded." />
+              <StatTile label="Interested" value={metrics.lead_counts.interested} description="Positive signal worth following up." />
+              <StatTile label="Closed" value={metrics.lead_counts.closed} description="Completed or no longer active." />
+              <StatTile label="Total leads" value={metrics.lead_counts.total} accent description="All leads in this project." />
+            </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <InfoField label="GET /" value={status.root.message} />
-            <InfoField label="GET /health" value={`status: ${status.health.status}`} />
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Messages</h3>
+            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <StatTile label="Drafts" value={metrics.outreach_counts.draft} description="Ready for manual review and sending." />
+              <StatTile label="Sent" value={metrics.outreach_counts.sent} description="Marked sent after you delivered them yourself." />
+              <StatTile label="Replied" value={metrics.outreach_counts.replied} description="Messages with a reply logged." />
+              <StatTile label="Ignored" value={metrics.outreach_counts.ignored} description="Messages you do not plan to use." />
+              <StatTile label="Total messages" value={metrics.outreach_counts.total} accent description="All message records in this project." />
+            </div>
           </div>
         </div>
       ) : null}
@@ -474,72 +843,90 @@ function StatusCard({
   );
 }
 
-function ProjectCard() {
-  return (
-    <Card className="space-y-4">
-      <SectionHeading
-        eyebrow="Project"
-        title="Active project"
-        description="This dashboard is pinned to the current working project so the operator always knows which record set they are touching."
-      />
-      <div className="space-y-3">
-        <Badge label="Current working project" tone="bg-stone-900 text-stone-50" />
-        <div className="rounded-3xl border border-border bg-white/65 p-5">
-          <p className="font-mono text-xs uppercase tracking-[0.18em] text-muted">Project ID</p>
-          <p className="mt-3 break-all text-lg font-semibold text-foreground">{PROJECT_ID}</p>
-          <p className="mt-3 text-sm leading-6 text-muted">
-            Use this project as the single place to discover candidates, import leads,
-            review drafts, mark manual sends, and inspect follow-ups.
-          </p>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-function GenerationControlCard({
-  eyebrow,
-  title,
-  description,
-  buttonLabel,
-  loadingLabel,
-  disabled,
+function OpportunityAnalysisCard({
+  objective,
+  mode,
+  numOpportunities,
   loading,
   notice,
   error,
-  onClick,
-  children,
+  highlighted,
+  onObjectiveChange,
+  onModeChange,
+  onNumOpportunitiesChange,
+  onSubmit,
 }: {
-  eyebrow: string;
-  title: string;
-  description: string;
-  buttonLabel: string;
-  loadingLabel: string;
-  disabled?: boolean;
+  objective: string;
+  mode: OperatorMode;
+  numOpportunities: number;
   loading: boolean;
   notice: string | null;
   error: string | null;
-  onClick: () => void;
-  children?: ReactNode;
+  highlighted?: boolean;
+  onObjectiveChange: (value: string) => void;
+  onModeChange: (mode: OperatorMode) => void;
+  onNumOpportunitiesChange: (value: number) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <Card className="space-y-5">
+    <Card id="find-business-ideas" highlighted={highlighted} className="space-y-6">
       <SectionHeading
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
+        eyebrow="Opportunity"
+        title="Find Business Ideas"
+        description="Create a ranked set of possible businesses for this project."
+        technicalLabel="Opportunity analysis"
       />
+      <p className="text-sm leading-6 text-muted">
+        Uses AI to suggest business opportunities and rank them.
+      </p>
       {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
       {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
-      {children}
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled || loading}
-        className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {loading ? loadingLabel : buttonLabel}
-      </button>
+      <form onSubmit={onSubmit} className="space-y-4">
+        <label className="block space-y-2">
+          <span className="text-sm font-semibold text-foreground">What are you trying to find?</span>
+          <textarea
+            value={objective}
+            onChange={(event) => onObjectiveChange(event.target.value)}
+            rows={6}
+            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-emerald-500"
+          />
+        </label>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">Idea style</span>
+            <select
+              value={mode}
+              onChange={(event) => onModeChange(event.target.value as OperatorMode)}
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            >
+              {OPERATOR_MODES.map((option) => (
+                <option key={option} value={option}>
+                  {humanize(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block space-y-2">
+            <span className="text-sm font-semibold text-foreground">How many ideas?</span>
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={numOpportunities}
+              onChange={(event) =>
+                onNumOpportunitiesChange(Math.min(5, Math.max(1, Number(event.target.value) || 1)))
+              }
+              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
+            />
+          </label>
+        </div>
+        <PrimaryButton
+          type="submit"
+          label="Find Business Ideas"
+          loadingLabel="Finding business ideas..."
+          loading={loading}
+        />
+      </form>
     </Card>
   );
 }
@@ -567,7 +954,7 @@ function OpportunitySummaryCard({
       <SectionHeading
         eyebrow="Opportunity"
         title="Top Opportunity"
-        description="Compare recent opportunity analysis runs, review the current best option, and keep launch-plan generation anchored to the strongest idea on screen."
+        description="Review the highest-ranked idea before creating the Business Plan."
         action={
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-2 rounded-full border border-border bg-white/70 px-3 py-2 text-sm text-foreground">
@@ -585,28 +972,16 @@ function OpportunitySummaryCard({
                 ))}
               </select>
             </label>
-            <RefreshButton
-              label="top opportunity"
-              onClick={onRefresh}
-              disabled={loading}
-            />
+            <RefreshButton label="opportunities" onClick={onRefresh} disabled={loading} />
           </div>
         }
       />
       {error ? <DataError message={error} /> : null}
-      {comparison ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <StatTile label="Analysis runs" value={comparison.total_runs} />
-          <StatTile label="Ranked opportunities" value={comparison.total_opportunities} accent />
-        </div>
-      ) : null}
-      {!comparison && loading ? (
-        <p className="text-sm text-muted">Loading opportunity comparison...</p>
-      ) : null}
+      {!comparison && loading ? <p className="text-sm text-muted">Loading opportunity comparison...</p> : null}
       {!topOpportunity && !loading && !error ? (
         <EmptyState
-          title="No opportunity analysis found yet."
-          description="Run an analysis first to compare opportunities and generate a launch plan from the current top result."
+          title="No ranked ideas yet"
+          description="Find Business Ideas first to populate this section."
         />
       ) : null}
       {topOpportunity ? (
@@ -616,14 +991,8 @@ function OpportunitySummaryCard({
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge label="Current top opportunity" tone="bg-emerald-200 text-emerald-950" />
-                  <Badge
-                    label={`Opportunity ${topOpportunity.opportunity_score}/10`}
-                    tone="bg-white text-stone-900"
-                  />
-                  <Badge
-                    label={`Confidence ${topOpportunity.confidence_score}/10`}
-                    tone="bg-white text-stone-900"
-                  />
+                  <Badge label={`Score ${topOpportunity.opportunity_score}/10`} tone="bg-white text-stone-900" />
+                  <Badge label={`Confidence ${topOpportunity.confidence_score}/10`} tone="bg-white text-stone-900" />
                   <Badge label={humanize(topOpportunity.mode)} tone="bg-white text-stone-900" />
                 </div>
                 <div>
@@ -637,48 +1006,40 @@ function OpportunitySummaryCard({
               </div>
             </div>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <InfoField label="Niche" value={topOpportunity.niche} />
               <InfoField label="Target customer" value={topOpportunity.target_customer} />
               <InfoField label="Core problem" value={topOpportunity.core_problem} />
               <InfoField label="Offer" value={topOpportunity.offer} />
-              <InfoField label="MVP" value={topOpportunity.mvp} />
-              <InfoField
-                label="Distribution channel"
-                value={topOpportunity.distribution_channel}
-              />
-              <InfoField
-                label="Monetization model"
-                value={topOpportunity.monetization_model}
-              />
+              <InfoField label="Distribution channel" value={topOpportunity.distribution_channel} />
             </div>
-            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-              <InfoField
-                label="Reasoning"
-                value={topOpportunity.reasoning}
-                preserveWhitespace
-              />
-              <div className="space-y-2">
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+              <InfoField label="Reasoning" value={topOpportunity.reasoning} preserveWhitespace />
+              <div className="rounded-3xl border border-border bg-white/75 p-4">
                 <p className="font-mono text-[11px] tracking-[0.18em] uppercase text-muted">
-                  Next actions
+                  Suggested next actions
                 </p>
-                <div className="rounded-3xl border border-border bg-white/75 px-4 py-4">
-                  <ol className="space-y-2 text-sm leading-6 text-foreground">
-                    {topOpportunity.next_actions.map((action, index) => (
-                      <li key={`${topOpportunity.run_id}-${action}`} className="flex gap-3">
-                        <span className="font-semibold text-emerald-900">{index + 1}.</span>
-                        <span>{action}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
+                <ol className="mt-3 space-y-2 text-sm leading-6 text-foreground">
+                  {topOpportunity.next_actions.map((action, index) => (
+                    <li key={`${topOpportunity.run_id}-${action}`} className="flex gap-3">
+                      <span className="font-semibold text-emerald-900">{index + 1}.</span>
+                      <span>{action}</span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             </div>
           </div>
 
+          {comparison ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <StatTile label="Analysis runs" value={comparison.total_runs} />
+              <StatTile label="Ranked opportunities" value={comparison.total_opportunities} accent />
+            </div>
+          ) : null}
+
           {rankedOpportunities.length > 0 ? (
             <section className="space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-foreground">Ranked opportunities</h3>
+                <h3 className="text-lg font-semibold text-foreground">Ranked ideas</h3>
                 <p className="text-sm text-muted">Compact view of the current comparison set.</p>
               </div>
               <div className="space-y-3">
@@ -693,29 +1054,14 @@ function OpportunitySummaryCard({
                           {index + 1}
                         </span>
                         <div>
-                          <p className="text-base font-semibold text-foreground">
-                            {opportunity.title}
-                          </p>
+                          <p className="text-base font-semibold text-foreground">{opportunity.title}</p>
                           <p className="text-sm text-muted">{opportunity.niche}</p>
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge
-                          label={`Opportunity ${opportunity.opportunity_score}/10`}
-                          tone="bg-emerald-100 text-emerald-900"
-                        />
-                        <Badge
-                          label={`Confidence ${opportunity.confidence_score}/10`}
-                          tone="bg-sky-100 text-sky-900"
-                        />
-                        <Badge
-                          label={humanize(opportunity.mode)}
-                          tone="bg-stone-200 text-stone-900"
-                        />
-                        <Badge
-                          label={`Run ${opportunity.run_id}`}
-                          tone="bg-white text-stone-900"
-                        />
+                        <Badge label={`Score ${opportunity.opportunity_score}/10`} tone="bg-emerald-100 text-emerald-900" />
+                        <Badge label={`Confidence ${opportunity.confidence_score}/10`} tone="bg-sky-100 text-sky-900" />
+                        <Badge label={humanize(opportunity.mode)} tone="bg-stone-200 text-stone-900" />
                       </div>
                     </div>
                   </article>
@@ -725,94 +1071,6 @@ function OpportunitySummaryCard({
           ) : null}
         </div>
       ) : null}
-    </Card>
-  );
-}
-
-function OpportunityAnalysisCard({
-  objective,
-  mode,
-  numOpportunities,
-  loading,
-  notice,
-  error,
-  onObjectiveChange,
-  onModeChange,
-  onNumOpportunitiesChange,
-  onSubmit,
-}: {
-  objective: string;
-  mode: OperatorMode;
-  numOpportunities: number;
-  loading: boolean;
-  notice: string | null;
-  error: string | null;
-  onObjectiveChange: (value: string) => void;
-  onModeChange: (mode: OperatorMode) => void;
-  onNumOpportunitiesChange: (value: number) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  return (
-    <Card className="space-y-6">
-      <SectionHeading
-        eyebrow="Opportunity"
-        title="Run Opportunity Analysis"
-        description="Start the operator workflow visually. This form calls the existing backend endpoint and refreshes the current opportunity comparison after a successful run."
-      />
-      {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
-      {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
-      <form onSubmit={onSubmit} className="space-y-4">
-        <label className="block space-y-2">
-          <span className="text-sm font-semibold text-foreground">Objective</span>
-          <textarea
-            value={objective}
-            onChange={(event) => onObjectiveChange(event.target.value)}
-            rows={6}
-            className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-emerald-500"
-          />
-        </label>
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-foreground">Mode</span>
-            <select
-              value={mode}
-              onChange={(event) => onModeChange(event.target.value as OperatorMode)}
-              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
-            >
-              {OPERATOR_MODES.map((option) => (
-                <option key={option} value={option}>
-                  {humanize(option)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block space-y-2">
-            <span className="text-sm font-semibold text-foreground">Number of opportunities</span>
-            <input
-              type="number"
-              min={1}
-              max={5}
-              value={numOpportunities}
-              onChange={(event) =>
-                onNumOpportunitiesChange(
-                  Math.min(5, Math.max(1, Number(event.target.value) || 1)),
-                )
-              }
-              className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none transition focus:border-emerald-500"
-            />
-          </label>
-        </div>
-        <InlineNotice tone="info">
-          The dashboard sends a simple form payload to <span className="font-mono">POST /agents/run</span>. No JSON editing required.
-        </InlineNotice>
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {loading ? "Running analysis..." : "Run Analysis"}
-        </button>
-      </form>
     </Card>
   );
 }
@@ -835,7 +1093,7 @@ function CandidateLeadCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge label="Unverified candidate lead" tone="bg-amber-200 text-amber-950" />
+            <Badge label="Possible lead to review" tone="bg-amber-200 text-amber-950" />
             <Badge label={humanize(candidate.status)} tone={getStatusTone(candidate.status)} />
             <Badge label={`Confidence ${candidate.confidence_score}/10`} tone="bg-white text-stone-900" />
           </div>
@@ -858,7 +1116,7 @@ function CandidateLeadCard({
               onClick={() => onImport(candidate.id)}
               className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {busy ? "Working..." : "Import"}
+              {busy ? "Working..." : "Import to Leads"}
             </button>
             <button
               type="button"
@@ -872,17 +1130,16 @@ function CandidateLeadCard({
         ) : null}
       </div>
       <p className="mt-4 text-sm leading-6 text-amber-950">
-        Candidate discovery suggests possible leads. It does not verify private emails or
-        guarantee contact data.
+        Discover Possible Leads suggests companies that might fit. Emails are not verified.
       </p>
       <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <InfoField label="Email" value={candidate.contact_email?.trim() || "No verified email yet"} />
         <InfoField label="Industry" value={candidate.industry?.trim() || "Industry not listed"} />
         <InfoField label="Website" value={formatWebsite(candidate.website)} />
-        <InfoField label="Lead source" value={candidate.lead_source?.trim() || "No lead source listed"} />
+        <InfoField label="Source" value={candidate.lead_source?.trim() || "No source listed"} />
       </div>
       <div className="mt-5 grid gap-4 md:grid-cols-2">
-        <InfoField label="Fit reason" value={candidate.fit_reason} />
+        <InfoField label="Why it could fit" value={candidate.fit_reason} />
         <InfoField label="Created" value={formatDateTime(candidate.created_at)} />
       </div>
     </article>
@@ -895,6 +1152,7 @@ function ManualLeadFormCard({
   notice,
   error,
   fieldError,
+  highlighted,
   onChange,
   onSubmit,
 }: {
@@ -903,18 +1161,22 @@ function ManualLeadFormCard({
   notice: string | null;
   error: string | null;
   fieldError: string | null;
+  highlighted?: boolean;
   onChange: (field: keyof ManualLeadFormState, value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <Card className="space-y-5">
+    <Card id="manual-lead" highlighted={highlighted} className="space-y-5">
       <SectionHeading
         eyebrow="Leads"
         title="Add Lead Manually"
-        description="Add a real lead directly into the current project without curl, seed file edits, or candidate import."
+        description="Use this when you already know a company or person you want to contact."
       />
+      <p className="text-sm leading-6 text-muted">
+        Use this when you already know a company or person you want to contact.
+      </p>
       <InlineNotice tone="warning">
-        Only add leads you are allowed to contact. RelayWorks creates drafts, but you still send manually.
+        RelayWorks creates drafts, but you still send manually.
       </InlineNotice>
       {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
       {error ? <InlineNotice tone="error">{error}</InlineNotice> : null}
@@ -982,7 +1244,7 @@ function ManualLeadFormCard({
             value={form.companyDescription}
             onChange={(event) => onChange("companyDescription", event.target.value)}
             rows={4}
-            placeholder="What the company does and why it fits the offer."
+            placeholder="What the company does and why it could fit."
             className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-emerald-500"
           />
         </label>
@@ -997,16 +1259,15 @@ function ManualLeadFormCard({
           />
         </label>
         <p className="text-xs leading-5 text-muted">
-          Project: <span className="font-mono">{PROJECT_ID}</span> · Status:{" "}
-          <span className="font-mono">new</span> · Dedupe: <span className="font-mono">true</span>
+          Project: <span className="font-mono">{PROJECT_ID}</span> · New leads start in the
+          <span className="font-semibold"> new</span> stage.
         </p>
-        <button
+        <PrimaryButton
           type="submit"
-          disabled={loading}
-          className="inline-flex items-center justify-center rounded-full bg-stone-900 px-5 py-3 text-sm font-semibold text-stone-50 transition hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {loading ? "Adding lead..." : "Add Lead"}
-        </button>
+          label="Add Lead Manually"
+          loadingLabel="Adding lead..."
+          loading={loading}
+        />
       </form>
     </Card>
   );
@@ -1021,6 +1282,7 @@ function LeadsTable({
   busyLeadId,
   batchLoading,
   highlightedLeadId,
+  highlighted,
   onRefresh,
   onCreateDraft,
   onCreateDraftsForNewLeads,
@@ -1033,6 +1295,7 @@ function LeadsTable({
   busyLeadId: string | null;
   batchLoading: boolean;
   highlightedLeadId: string | null;
+  highlighted?: boolean;
   onRefresh: () => void;
   onCreateDraft: (leadId: string) => void;
   onCreateDraftsForNewLeads: () => void;
@@ -1050,28 +1313,29 @@ function LeadsTable({
   }, [highlightedLeadId, leads]);
 
   return (
-    <Card className="space-y-5">
+    <Card id="leads-table" highlighted={highlighted} className="space-y-5">
       <SectionHeading
         eyebrow="Leads"
-        title="Imported leads"
-        description="These are the leads already in the working pipeline. New leads can generate email drafts from the latest asset pack, which makes the candidate-to-draft workflow visible in one place."
+        title="Leads in Your Pipeline"
+        description="These are the companies or contacts you can work on next."
         action={
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
+            <PrimaryButton
+              label="Create Drafts for New Leads"
+              loadingLabel="Creating drafts..."
+              loading={batchLoading}
               onClick={onCreateDraftsForNewLeads}
-              disabled={batchLoading}
-              className="inline-flex items-center justify-center rounded-full bg-emerald-900 px-4 py-2 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {batchLoading ? "Creating drafts..." : "Create Drafts for New Leads"}
-            </button>
+            />
             <RefreshButton label="leads" onClick={onRefresh} disabled={loading} />
           </div>
         }
       />
+      <p className="text-sm leading-6 text-muted">
+        Create Draft: Creates a message draft. It does not send anything.
+      </p>
       <InlineNotice tone="info">
-        RelayWorks does not send emails automatically. It only creates drafts. Send
-        manually, then click Mark as Sent.
+        RelayWorks does not send emails automatically. It only creates drafts. Send manually,
+        then click I Sent This Manually.
       </InlineNotice>
       {notice ? <InlineNotice tone="success">{notice}</InlineNotice> : null}
       {actionError ? <InlineNotice tone="error">{actionError}</InlineNotice> : null}
@@ -1080,7 +1344,7 @@ function LeadsTable({
       {leads && leads.length === 0 ? (
         <EmptyState
           title="No leads yet"
-          description="Imported leads will appear here after you accept candidate leads."
+          description="Import a possible lead or add one manually to start creating drafts."
         />
       ) : null}
       {leads && leads.length > 0 ? (
@@ -1095,7 +1359,7 @@ function LeadsTable({
                 <th className="px-3">Industry</th>
                 <th className="px-3">Website</th>
                 <th className="px-3">Created</th>
-                <th className="px-3">Drafts</th>
+                <th className="px-3">Next step</th>
               </tr>
             </thead>
             <tbody>
@@ -1103,11 +1367,10 @@ function LeadsTable({
                 <tr
                   key={lead.id}
                   id={`lead-row-${lead.id}`}
-                  className={`rounded-3xl text-sm text-foreground ${
-                    highlightedLeadId === lead.id
-                      ? "bg-emerald-50/95 ring-1 ring-emerald-300"
-                      : "bg-white/65"
-                  }`}
+                  className={classNames(
+                    "rounded-3xl text-sm text-foreground",
+                    highlightedLeadId === lead.id ? "bg-emerald-50/95 ring-1 ring-emerald-300" : "bg-white/65",
+                  )}
                 >
                   <td className="rounded-l-3xl px-3 py-4 font-semibold">{lead.company_name}</td>
                   <td className="px-3 py-4">{lead.contact_name || "No verified contact yet"}</td>
@@ -1131,14 +1394,12 @@ function LeadsTable({
                         </button>
                       ) : (
                         <span className="text-sm text-muted">
-                          {lead.status === "contacted"
-                            ? "Already contacted"
-                            : "Not available"}
+                          {lead.status === "contacted" ? "Already contacted" : "No draft action needed"}
                         </span>
                       )}
                       {highlightedLeadId === lead.id ? (
                         <p className="max-w-[18rem] text-xs font-medium leading-5 text-emerald-900">
-                          Next: create an outreach draft for this lead.
+                          Next: create a draft for this lead.
                         </p>
                       ) : null}
                     </div>
@@ -1153,7 +1414,7 @@ function LeadsTable({
         <p className="text-sm text-muted">
           {newLeadCount === 0
             ? "No new leads need drafts right now."
-            : `${newLeadCount} new lead${newLeadCount === 1 ? "" : "s"} can generate drafts from the latest asset pack.`}
+            : `${newLeadCount} new ${pluralize(newLeadCount, "lead")} can create drafts from the latest Sales Materials.`}
         </p>
       ) : null}
     </Card>
@@ -1165,6 +1426,9 @@ function OutreachBoard({
   loading,
   error,
   busyOutreachId,
+  copiedKey,
+  highlighted,
+  onCopy,
   onRefresh,
   onMarkSent,
 }: {
@@ -1172,25 +1436,32 @@ function OutreachBoard({
   loading: boolean;
   error: string | null;
   busyOutreachId: string | null;
+  copiedKey: string | null;
+  highlighted?: boolean;
+  onCopy: (copyKey: string, value: string) => void;
   onRefresh: () => void;
   onMarkSent: (outreachId: string) => void;
 }) {
   const sorted = outreach ? sortNewestFirst(outreach) : [];
 
   return (
-    <Card className="space-y-5">
+    <Card id="drafts-board" highlighted={highlighted} className="space-y-5">
       <SectionHeading
-        eyebrow="Outreach"
-        title="Drafts and sent outreach"
-        description="Draft records are shown here for human review. The frontend never sends email; it only helps the operator inspect messages and mark them as sent after manual delivery."
-        action={<RefreshButton label="outreach" onClick={onRefresh} disabled={loading} />}
+        eyebrow="Drafts"
+        title="Messages"
+        description="Review, copy, and manually send these drafts. RelayWorks never sends them for you."
+        technicalLabel="Outreach records"
+        action={<RefreshButton label="messages" onClick={onRefresh} disabled={loading} />}
       />
+      <InlineNotice tone="warning">
+        Only click I Sent This Manually after you copied and sent the message yourself.
+      </InlineNotice>
       {error ? <DataError message={error} /> : null}
-      {!outreach && loading ? <p className="text-sm text-muted">Loading outreach records...</p> : null}
+      {!outreach && loading ? <p className="text-sm text-muted">Loading message records...</p> : null}
       {outreach && outreach.length === 0 ? (
         <EmptyState
-          title="No outreach records yet"
-          description="Drafts and sent outreach will appear here when the backend generates them."
+          title="No drafts yet"
+          description="Create drafts from the Leads tab after you have Sales Materials and at least one lead."
         />
       ) : null}
       {outreach && outreach.length > 0 ? (
@@ -1203,33 +1474,37 @@ function OutreachBoard({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <h3 className="text-lg font-semibold text-foreground">{humanize(status)}</h3>
-                    <Badge label={`${items.length} records`} tone={getStatusTone(status)} />
+                    <Badge label={`${items.length} ${pluralize(items.length, "message")}`} tone={getStatusTone(status)} />
                   </div>
                 </div>
                 <div className="mt-4 space-y-4">
                   {items.length === 0 ? (
-                    <p className="text-sm text-muted">No {status} outreach records right now.</p>
+                    <p className="text-sm text-muted">No {status} messages right now.</p>
                   ) : (
                     items.map((record) => (
                       <article key={record.id} className="rounded-3xl border border-border bg-card-strong p-4">
                         <div className="flex flex-col gap-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge label={humanize(record.status)} tone={getStatusTone(record.status)} />
-                            <Badge label={record.channel} tone="bg-stone-200 text-stone-900" />
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge label={humanize(record.status)} tone={getStatusTone(record.status)} />
+                              <Badge label={record.channel} tone="bg-stone-200 text-stone-900" />
+                            </div>
+                            <CopyButton
+                              copyKey={`outreach-${record.id}`}
+                              copiedKey={copiedKey}
+                              value={record.message}
+                              onCopy={onCopy}
+                            />
                           </div>
                           <div className="grid gap-3 md:grid-cols-2">
                             <InfoField label="Lead ID" value={record.lead_id} />
-                            <InfoField label="Asset pack ID" value={record.asset_pack_id} />
+                            <InfoField label="Sales materials ID" value={record.asset_pack_id} />
                           </div>
                           <InfoField label="Created" value={formatDateTime(record.created_at)} />
-                          <InfoField
-                            label="Message preview"
-                            value={previewMessage(record.message)}
-                            preserveWhitespace
-                          />
+                          <InfoField label="Message preview" value={previewMessage(record.message)} preserveWhitespace />
                           <details className="rounded-2xl border border-border bg-white/75 p-4">
                             <summary className="cursor-pointer text-sm font-semibold text-foreground">
-                              Read full message
+                              Expand full message
                             </summary>
                             <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-foreground">
                               {record.message}
@@ -1237,8 +1512,8 @@ function OutreachBoard({
                           </details>
                           {record.status === "draft" ? (
                             <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
-                              <p className="text-sm font-semibold text-amber-950">
-                                Only click after you manually sent this message.
+                              <p className="text-sm text-amber-950">
+                                I Sent This Manually: Only click this after you manually sent this message yourself.
                               </p>
                               <button
                                 type="button"
@@ -1246,7 +1521,7 @@ function OutreachBoard({
                                 onClick={() => onMarkSent(record.id)}
                                 className="rounded-full bg-amber-900 px-4 py-2 text-sm font-semibold text-amber-50 transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                {busyOutreachId === record.id ? "Marking..." : "Mark as Sent"}
+                                {busyOutreachId === record.id ? "Updating..." : "I Sent This Manually"}
                               </button>
                             </div>
                           ) : null}
@@ -1268,25 +1543,30 @@ function FollowUpSection({
   followUps,
   loading,
   error,
+  highlighted,
   onRefresh,
 }: {
   followUps: FollowUpQueueItem[] | null;
   loading: boolean;
   error: string | null;
+  highlighted?: boolean;
   onRefresh: () => void;
 }) {
   return (
-    <Card className="space-y-5">
+    <Card id="follow-up-queue" highlighted={highlighted} className="space-y-5">
       <SectionHeading
         eyebrow="Follow-ups"
-        title="Follow-up queue"
-        description="This queue surfaces leads whose most recent outreach was sent and may need another touchpoint."
+        title="Follow-up Queue"
+        description="These contacts had a sent message and may need a manual next step."
         action={<RefreshButton label="follow-ups" onClick={onRefresh} disabled={loading} />}
       />
       {error ? <DataError message={error} /> : null}
       {!followUps && loading ? <p className="text-sm text-muted">Loading follow-up queue...</p> : null}
       {followUps && followUps.length === 0 ? (
-        <EmptyState title="No follow-ups due right now." description="Once a lead needs a follow-up, it will appear here with the last outreach context." />
+        <EmptyState
+          title="No follow-ups due right now"
+          description="Once a lead needs another manual touchpoint, it will show up here."
+        />
       ) : null}
       {followUps && followUps.length > 0 ? (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -1300,9 +1580,13 @@ function FollowUpSection({
               <p className="mt-1 text-sm text-muted">{item.contact_name}</p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 <InfoField label="Lead ID" value={item.lead_id} />
-                <InfoField label="Last outreach ID" value={item.last_outreach_id} />
+                <InfoField label="Last message ID" value={item.last_outreach_id} />
               </div>
-              <InfoField label="Message preview" value={previewMessage(item.message)} preserveWhitespace />
+              <InfoField label="Last message" value={previewMessage(item.message)} preserveWhitespace />
+              <InfoField
+                label="Suggested next action"
+                value="Review the last message, decide whether to send a short follow-up manually, and update the lead based on any reply."
+              />
             </article>
           ))}
         </div>
@@ -1315,38 +1599,69 @@ function AssetPackCard({
   assetPack,
   loading,
   error,
+  copiedKey,
+  highlighted,
+  onCopy,
 }: {
   assetPack: AssetPack | null;
   loading: boolean;
   error: string | null;
+  copiedKey: string | null;
+  highlighted?: boolean;
+  onCopy: (copyKey: string, value: string) => void;
 }) {
   return (
-    <Card className="space-y-5">
+    <Card id="sales-materials" highlighted={highlighted} className="space-y-5">
       <SectionHeading
         eyebrow="Assets"
-        title="Latest asset pack"
-        description="This is the latest messaging package the backend generated for the project."
+        title="Sales Materials"
+        description="This is the latest pitch and message pack for the current project."
+        technicalLabel="Asset pack"
       />
       {error ? <DataError message={error} /> : null}
-      {!assetPack && loading ? <p className="text-sm text-muted">Loading asset pack...</p> : null}
+      {!assetPack && loading ? <p className="text-sm text-muted">Loading Sales Materials...</p> : null}
       {!assetPack && !loading && !error ? (
         <EmptyState
-          title="No asset pack found yet."
-          description="Generate an asset pack in the backend and it will appear here."
+          title="No Sales Materials yet"
+          description="Create Sales Materials after you have a Business Plan."
         />
       ) : null}
       {assetPack ? (
-        <div className="space-y-5">
-          <InfoField label="Headline" value={assetPack.headline} />
-          <InfoField label="One sentence pitch" value={assetPack.one_sentence_pitch} />
-          <InfoField label="Pilot offer" value={assetPack.pilot_offer} preserveWhitespace />
-          <InfoField label="Cold outreach email subject" value={assetPack.cold_outreach_email_subject} />
+        <div className="space-y-4">
+          <InfoField label="Headline" value={assetPack.headline} secondaryValue={`Asset pack ID: ${assetPack.id}`} />
           <InfoField
-            label="Cold outreach email body"
+            label="One-sentence pitch"
+            value={assetPack.one_sentence_pitch}
+            action={<CopyButton copyKey="asset-one-sentence-pitch" copiedKey={copiedKey} value={assetPack.one_sentence_pitch} onCopy={onCopy} />}
+          />
+          <InfoField
+            label="Pilot offer"
+            value={assetPack.pilot_offer}
+            preserveWhitespace
+            action={<CopyButton copyKey="asset-pilot-offer" copiedKey={copiedKey} value={assetPack.pilot_offer} onCopy={onCopy} />}
+          />
+          <InfoField
+            label="Email subject"
+            value={assetPack.cold_outreach_email_subject}
+            action={<CopyButton copyKey="asset-email-subject" copiedKey={copiedKey} value={assetPack.cold_outreach_email_subject} onCopy={onCopy} />}
+          />
+          <InfoField
+            label="Cold outreach draft message"
             value={assetPack.cold_outreach_email_body}
             preserveWhitespace
+            action={<CopyButton copyKey="asset-email-body" copiedKey={copiedKey} value={assetPack.cold_outreach_email_body} onCopy={onCopy} />}
           />
-          <InfoField label="LinkedIn DM" value={assetPack.linkedin_dm} preserveWhitespace />
+          <InfoField
+            label="LinkedIn DM"
+            value={assetPack.linkedin_dm}
+            preserveWhitespace
+            action={<CopyButton copyKey="asset-linkedin-dm" copiedKey={copiedKey} value={assetPack.linkedin_dm} onCopy={onCopy} />}
+          />
+          <InfoField
+            label="Discovery call script"
+            value="Not available in the current asset pack."
+            secondaryValue="If the backend adds this field later, it can appear here."
+          />
         </div>
       ) : null}
     </Card>
@@ -1357,42 +1672,158 @@ function LaunchPlanCard({
   launchPlan,
   loading,
   error,
+  highlighted,
 }: {
   launchPlan: LaunchPlan | null;
   loading: boolean;
   error: string | null;
+  highlighted?: boolean;
 }) {
   return (
-    <Card className="space-y-5">
+    <Card id="business-plan" highlighted={highlighted} className="space-y-5">
       <SectionHeading
-        eyebrow="Launch"
-        title="Latest launch plan"
-        description="This section shows the current offer and go-to-market guidance the backend has already generated."
+        eyebrow="Assets"
+        title="Business Plan"
+        description="This is the practical plan RelayWorks built from the current top opportunity."
+        technicalLabel="Launch plan"
       />
       {error ? <DataError message={error} /> : null}
-      {!launchPlan && loading ? <p className="text-sm text-muted">Loading launch plan...</p> : null}
+      {!launchPlan && loading ? <p className="text-sm text-muted">Loading Business Plan...</p> : null}
       {!launchPlan && !loading && !error ? (
         <EmptyState
-          title="No launch plan found yet."
-          description="Generate a launch plan in the backend and it will appear here."
+          title="No Business Plan yet"
+          description="Create a Business Plan after choosing a top opportunity."
         />
       ) : null}
       {launchPlan ? (
-        <div className="space-y-5">
-          <InfoField label="Headline" value={launchPlan.headline} />
+        <div className="space-y-4">
+          <InfoField label="Headline" value={launchPlan.headline} secondaryValue={`Launch plan ID: ${launchPlan.id}`} />
           <InfoField label="Ideal customer profile" value={launchPlan.ideal_customer_profile} />
           <InfoField label="Offer summary" value={launchPlan.offer_summary} preserveWhitespace />
           <InfoField label="Pricing hypothesis" value={launchPlan.pricing_hypothesis} />
           <InfoField label="Sales motion" value={launchPlan.sales_motion} preserveWhitespace />
-          <InfoField
-            label="Launch recommendation"
-            value={launchPlan.launch_recommendation}
-            preserveWhitespace
-          />
+          <InfoField label="Launch recommendation" value={launchPlan.launch_recommendation} preserveWhitespace />
+          <details className="rounded-3xl border border-border bg-white/60 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">
+              Expand the full Business Plan
+            </summary>
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <InfoField label="Painful problem statement" value={launchPlan.painful_problem_statement} preserveWhitespace />
+              <InfoField label="Selected opportunity" value={launchPlan.selected_opportunity.title} secondaryValue={launchPlan.selected_opportunity.offer} />
+              <InfoField label="MVP scope" value={launchPlan.mvp_scope.join("\n")} preserveWhitespace />
+              <InfoField label="Acquisition channels" value={launchPlan.acquisition_channels.join("\n")} preserveWhitespace />
+              <InfoField label="First 30 day plan" value={launchPlan.first_30_day_plan.join("\n")} preserveWhitespace />
+              <InfoField label="Success metrics" value={launchPlan.success_metrics.join("\n")} preserveWhitespace />
+              <InfoField label="Biggest risks" value={launchPlan.biggest_risks.join("\n")} preserveWhitespace />
+              <InfoField label="Mitigation steps" value={launchPlan.mitigation_steps.join("\n")} preserveWhitespace />
+            </div>
+          </details>
         </div>
       ) : null}
     </Card>
   );
+}
+
+function AdvancedDetailsCard({
+  projectId,
+  backendStatus,
+  latestLaunchPlan,
+  latestAssetPack,
+  topOpportunity,
+  candidateCount,
+  leadCount,
+  outreachCount,
+  followUpCount,
+}: {
+  projectId: string;
+  backendStatus: BackendStatusResponse | null;
+  latestLaunchPlan: LaunchPlan | null;
+  latestAssetPack: AssetPack | null;
+  topOpportunity: OpportunityComparison["top_opportunity"];
+  candidateCount: number;
+  leadCount: number;
+  outreachCount: number;
+  followUpCount: number;
+}) {
+  return (
+    <Card id="advanced-details" className="space-y-5">
+      <SectionHeading
+        eyebrow="Advanced"
+        title="Technical Details"
+        description="These are the raw IDs and implementation details that most beginners do not need first."
+      />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <InfoField label="Project ID" value={projectId} />
+        <InfoField label="Backend URL" value={API_BASE_URL} />
+        <InfoField label="Backend online" value={backendStatus?.online ? "true" : "false"} />
+        <InfoField label="Top opportunity run ID" value={topOpportunity?.run_id ?? "No run yet"} />
+        <InfoField label="Latest launch plan ID" value={latestLaunchPlan?.id ?? "No launch plan yet"} />
+        <InfoField label="Latest asset pack ID" value={latestAssetPack?.id ?? "No asset pack yet"} />
+        <InfoField label="Candidate lead count" value={String(candidateCount)} />
+        <InfoField label="Lead count" value={String(leadCount)} />
+        <InfoField label="Message count" value={String(outreachCount)} />
+        <InfoField label="Follow-up count" value={String(followUpCount)} />
+        <InfoField label="Launch plan source run ID" value={latestLaunchPlan?.source_run_id ?? "Unknown"} />
+        <InfoField label="Asset pack launch plan ID" value={latestAssetPack?.launch_plan_id ?? "Unknown"} />
+      </div>
+    </Card>
+  );
+}
+
+function useResource<T>(load: () => Promise<T>) {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadInitially() {
+      try {
+        const next = await load();
+        if (!active) {
+          return;
+        }
+        setData(next);
+        setError(null);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setError(toErrorMessage(error));
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadInitially();
+
+    return () => {
+      active = false;
+    };
+  }, [load]);
+
+  async function refresh() {
+    setLoading(true);
+    try {
+      const next = await load();
+      setData(next);
+      setError(null);
+    } catch (error) {
+      setError(toErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return {
+    data,
+    error,
+    loading,
+    refresh,
+  };
 }
 
 export function OperatorDashboard() {
@@ -1405,6 +1836,9 @@ export function OperatorDashboard() {
   const assetPacks = useResource(getAssetPacks);
   const launchPlans = useResource(getLaunchPlans);
 
+  const [activeTab, setActiveTab] = useState<DashboardTab>("home");
+  const [highlightedSectionId, setHighlightedSectionId] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [analysisObjective, setAnalysisObjective] = useState(DEFAULT_ANALYSIS_OBJECTIVE);
   const [analysisMode, setAnalysisMode] = useState<OperatorMode>("research_operator");
   const [analysisNumOpportunities, setAnalysisNumOpportunities] = useState(3);
@@ -1447,8 +1881,17 @@ export function OperatorDashboard() {
   const latestAssetPack = assetPacks.data ? getLatestRecord(assetPacks.data) : null;
   const latestLaunchPlan = launchPlans.data ? getLatestRecord(launchPlans.data) : null;
   const currentTopOpportunity = opportunityComparison?.top_opportunity ?? null;
-  const currentLaunchPlanMode =
-    comparisonMode === "all" ? undefined : comparisonMode;
+  const currentLaunchPlanMode = comparisonMode === "all" ? undefined : comparisonMode;
+
+  const sortedCandidates = sortNewestFirst(candidates.data ?? []);
+  const sortedLeads = sortNewestFirst(leads.data ?? []);
+  const sortedOutreach = sortNewestFirst(outreach.data ?? []);
+  const discoveredCandidates = sortedCandidates.filter((candidate) => candidate.status === "discovered");
+  const newLeads = sortedLeads.filter((lead) => lead.status === "new");
+  const draftRecords = sortedOutreach.filter((record) => record.status === "draft");
+  const sentRecords = sortedOutreach.filter((record) => record.status === "sent");
+  const followUpCount = followUps.data?.length ?? 0;
+  const demoMode = PROJECT_ID === DEMO_PROJECT_ID;
 
   async function refreshOpportunityComparison(mode: ComparisonModeFilter = comparisonMode) {
     setComparisonLoading(true);
@@ -1496,6 +1939,50 @@ export function OperatorDashboard() {
     };
   }, [comparisonMode]);
 
+  useEffect(() => {
+    if (!highlightedSectionId) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setHighlightedSectionId(null);
+    }, 2400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [highlightedSectionId]);
+
+  useEffect(() => {
+    if (!copiedKey) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCopiedKey(null);
+    }, 1600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [copiedKey]);
+
+  function openTabAndSection(tab: DashboardTab, sectionId?: string) {
+    setActiveTab(tab);
+    if (!sectionId) {
+      return;
+    }
+
+    setHighlightedSectionId(sectionId);
+    window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 120);
+  }
+
+  async function handleCopy(copyKey: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopiedKey(copyKey);
+  }
+
   async function handleRunOpportunityAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setRunningAnalysis(true);
@@ -1516,7 +2003,7 @@ export function OperatorDashboard() {
         numOpportunities: analysisNumOpportunities,
       });
       setAnalysisNotice(
-        `Analysis complete for ${humanize(run.mode)}. Top opportunity refreshed below. You can now generate a launch plan.`,
+        `Business ideas updated for ${humanize(run.mode)}. You can now create a Business Plan.`,
       );
       if (comparisonMode !== run.mode) {
         setComparisonMode(run.mode);
@@ -1543,7 +2030,7 @@ export function OperatorDashboard() {
         target,
         count,
       });
-      setCandidateNotice(`Discovery completed. ${discovered.length} candidate lead${discovered.length === 1 ? "" : "s"} returned.`);
+      setCandidateNotice(`Discovery completed. ${discovered.length} possible ${pluralize(discovered.length, "lead")} returned.`);
       startTransition(() => {
         void candidates.refresh();
       });
@@ -1561,9 +2048,7 @@ export function OperatorDashboard() {
 
     try {
       await importCandidateLead(candidateLeadId);
-      setCandidateNotice(
-        "Candidate imported. You can now create an outreach draft from the Leads section.",
-      );
+      setCandidateNotice("Lead imported. You can now create a message draft from the Leads tab.");
       startTransition(() => {
         void Promise.all([candidates.refresh(), leads.refresh(), metrics.refresh()]);
       });
@@ -1581,7 +2066,7 @@ export function OperatorDashboard() {
 
     try {
       await rejectCandidateLead(candidateLeadId);
-      setCandidateNotice("Candidate rejected.");
+      setCandidateNotice("Possible lead rejected.");
       startTransition(() => {
         void candidates.refresh();
       });
@@ -1600,9 +2085,7 @@ export function OperatorDashboard() {
     }
 
     if (!currentTopOpportunity) {
-      setGenerationError(
-        comparisonError ?? "No top opportunity found yet. Run opportunity analysis first.",
-      );
+      setGenerationError(comparisonError ?? "No top opportunity found yet. Find Business Ideas first.");
       setGenerationNotice(null);
       return;
     }
@@ -1613,9 +2096,7 @@ export function OperatorDashboard() {
 
     try {
       const launchPlan = await generateLaunchPlan(currentLaunchPlanMode);
-      setGenerationNotice(
-        `Launch plan generated from ${currentTopOpportunity.title}: ${launchPlan.headline}`,
-      );
+      setGenerationNotice(`Business Plan created from ${currentTopOpportunity.title}: ${launchPlan.headline}`);
       startTransition(() => {
         void launchPlans.refresh();
       });
@@ -1633,7 +2114,7 @@ export function OperatorDashboard() {
 
     try {
       const assetPack = await generateAssetPack();
-      setAssetPackNotice(`Asset pack generated: ${assetPack.headline}`);
+      setAssetPackNotice(`Sales Materials created: ${assetPack.headline}`);
       startTransition(() => {
         void assetPacks.refresh();
       });
@@ -1711,7 +2192,7 @@ export function OperatorDashboard() {
         return;
       }
 
-      setManualLeadNotice("Lead added. Next: create an outreach draft for this lead.");
+      setManualLeadNotice("Lead added. Next: create a message draft for this lead.");
       setManualLeadForm(EMPTY_MANUAL_LEAD_FORM);
     } catch (error) {
       setManualLeadError(toErrorMessage(error));
@@ -1726,7 +2207,7 @@ export function OperatorDashboard() {
     setLeadActionError(null);
 
     if (!latestAssetPack) {
-      setLeadActionError("Generate an asset pack first.");
+      setLeadActionError("Create Sales Materials first.");
       setBusyLeadId(null);
       return;
     }
@@ -1736,11 +2217,7 @@ export function OperatorDashboard() {
         leadId,
         assetPackId: latestAssetPack.id,
       });
-      setLeadNotice(
-        outreachDraft.deduped
-          ? "A matching draft already existed for that lead."
-          : "Draft created for the selected lead.",
-      );
+      setLeadNotice(outreachDraft.deduped ? "A matching draft already existed for that lead." : "Draft created for the selected lead.");
       startTransition(() => {
         void Promise.all([outreach.refresh(), leads.refresh(), metrics.refresh()]);
       });
@@ -1757,7 +2234,7 @@ export function OperatorDashboard() {
     setLeadActionError(null);
 
     if (!latestAssetPack) {
-      setLeadActionError("Generate an asset pack first.");
+      setLeadActionError("Create Sales Materials first.");
       setCreatingBatchDrafts(false);
       return;
     }
@@ -1779,9 +2256,7 @@ export function OperatorDashboard() {
       });
       const dedupedCount = outreachDrafts.filter((draft) => draft.deduped).length;
       const createdCount = outreachDrafts.length - dedupedCount;
-      setLeadNotice(
-        `Draft batch complete. ${createdCount} created, ${dedupedCount} deduped.`,
-      );
+      setLeadNotice(`Draft batch complete. ${createdCount} created, ${dedupedCount} deduped.`);
       startTransition(() => {
         void Promise.all([outreach.refresh(), metrics.refresh(), leads.refresh()]);
       });
@@ -1799,14 +2274,9 @@ export function OperatorDashboard() {
 
     try {
       await markOutreachSent(outreachId);
-      setOutreachNotice("Draft marked as sent and lead status refreshed.");
+      setOutreachNotice("Message marked as sent and lead status refreshed.");
       startTransition(() => {
-        void Promise.all([
-          outreach.refresh(),
-          leads.refresh(),
-          metrics.refresh(),
-          followUps.refresh(),
-        ]);
+        void Promise.all([outreach.refresh(), leads.refresh(), metrics.refresh(), followUps.refresh()]);
       });
     } catch (error) {
       setOutreachActionError(toErrorMessage(error));
@@ -1815,281 +2285,475 @@ export function OperatorDashboard() {
     }
   }
 
+  const backendResolved = Boolean(backendStatus.data || backendStatus.error || !backendStatus.loading);
+  const backendOnline = backendStatus.data?.online ?? false;
+  const coreLoading =
+    comparisonLoading ||
+    launchPlans.loading ||
+    assetPacks.loading ||
+    candidates.loading ||
+    leads.loading ||
+    outreach.loading ||
+    followUps.loading;
+
+  let nextStepRecommendation: NextStepRecommendation;
+
+  if (!backendResolved) {
+    nextStepRecommendation = {
+      title: "Checking your setup",
+      description: "The dashboard is still checking whether the backend is reachable.",
+      ctaLabel: "Stay on Home",
+      tab: "home",
+    };
+  } else if (!backendOnline) {
+    nextStepRecommendation = {
+      title: "Start the backend first.",
+      description: "The frontend cannot load project actions until the local FastAPI server is running.",
+      ctaLabel: "Refresh backend status",
+      tab: "home",
+      sectionId: "backend-status",
+      refreshOnly: true,
+    };
+  } else if (!currentTopOpportunity && comparisonLoading) {
+    nextStepRecommendation = {
+      title: "Checking your current project state",
+      description: "RelayWorks is still loading the latest opportunity comparison.",
+      ctaLabel: "Open Opportunity Tab",
+      tab: "opportunity",
+      sectionId: "find-business-ideas",
+    };
+  } else if (!currentTopOpportunity) {
+    nextStepRecommendation = {
+      title: "Run Opportunity Analysis.",
+      description: "You need a ranked business idea before you can create a Business Plan.",
+      ctaLabel: "Go to Find Business Ideas",
+      tab: "opportunity",
+      sectionId: "find-business-ideas",
+    };
+  } else if (!latestLaunchPlan) {
+    nextStepRecommendation = {
+      title: "Generate a Launch Plan.",
+      description: "Turn the top business idea into a practical Business Plan.",
+      ctaLabel: "Go to Create Business Plan",
+      tab: "opportunity",
+      sectionId: "business-plan-generator",
+    };
+  } else if (!latestAssetPack) {
+    nextStepRecommendation = {
+      title: "Generate an Asset Pack.",
+      description: "Create the pitch, email copy, LinkedIn message, and offer before drafting outreach.",
+      ctaLabel: "Go to Create Sales Materials",
+      tab: "assets",
+      sectionId: "sales-materials-generator",
+    };
+  } else if ((candidates.data?.length ?? 0) === 0 && (leads.data?.length ?? 0) === 0 && !coreLoading) {
+    nextStepRecommendation = {
+      title: "Discover candidate leads or add a lead manually.",
+      description: "You have Sales Materials, but no possible leads or imported leads yet.",
+      ctaLabel: "Go to Leads",
+      tab: "leads",
+      sectionId: "lead-finder",
+    };
+  } else if (discoveredCandidates.length > 0) {
+    nextStepRecommendation = {
+      title: "Review candidate leads and import the good ones.",
+      description: `${discoveredCandidates.length} possible ${pluralize(discoveredCandidates.length, "lead")} still need review.`,
+      ctaLabel: "Review Possible Leads",
+      tab: "leads",
+      sectionId: "possible-leads",
+    };
+  } else if (newLeads.length > 0 && latestAssetPack) {
+    nextStepRecommendation = {
+      title: "Create outreach drafts for new leads.",
+      description: `${newLeads.length} new ${pluralize(newLeads.length, "lead")} can be turned into message drafts now.`,
+      ctaLabel: "Go to Leads",
+      tab: "leads",
+      sectionId: "leads-table",
+    };
+  } else if (draftRecords.length > 0) {
+    nextStepRecommendation = {
+      title: "Review drafts, manually send them, then click Mark as Sent.",
+      description: `${draftRecords.length} draft ${pluralize(draftRecords.length, "message")} still need manual review.`,
+      ctaLabel: "Go to Drafts",
+      tab: "drafts",
+      sectionId: "drafts-board",
+    };
+  } else if (sentRecords.length > 0 || followUpCount > 0) {
+    nextStepRecommendation = {
+      title: "Check follow-ups and update replies.",
+      description: "You have sent outreach history, so the next operator job is checking for follow-up work.",
+      ctaLabel: "Open Follow-ups",
+      tab: "followups",
+      sectionId: "follow-up-queue",
+    };
+  } else {
+    nextStepRecommendation = {
+      title: "Your workflow is up to date.",
+      description: "Add more leads or run a new analysis when you want to work another batch.",
+      ctaLabel: "Open Home",
+      tab: "home",
+    };
+  }
+
+  const workflowStates: WorkflowState[] = [
+    currentTopOpportunity ? "done" : backendOnline ? "current" : "not_started",
+    latestLaunchPlan ? "done" : currentTopOpportunity ? "current" : "not_started",
+    latestAssetPack ? "done" : latestLaunchPlan ? "current" : "not_started",
+    (sortedLeads.length > 0 || sortedCandidates.length > 0)
+      ? "done"
+      : latestAssetPack
+        ? "current"
+        : "not_started",
+    sortedOutreach.length > 0 ? "done" : newLeads.length > 0 && latestAssetPack ? "current" : "not_started",
+    sentRecords.length > 0 ? "done" : draftRecords.length > 0 ? "current" : "not_started",
+    sentRecords.length > 0 ? "done" : draftRecords.length > 0 ? "not_started" : "not_started",
+    followUpCount > 0 ? "current" : sentRecords.length > 0 ? "done" : "not_started",
+  ];
+
   return (
     <main className="min-h-screen px-4 py-6 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1500px] flex-col gap-6">
         <Card className="overflow-hidden p-0">
-          <div className="border-b border-white/50 bg-[linear-gradient(135deg,rgba(31,106,82,0.92),rgba(16,42,35,0.9)_58%,rgba(154,95,17,0.76))] px-6 py-8 text-stone-50 sm:px-8">
+          <div className="border-b border-white/50 bg-[linear-gradient(135deg,rgba(31,106,82,0.92),rgba(16,42,35,0.9)_58%,rgba(154,95,17,0.72))] px-6 py-8 text-stone-50 sm:px-8">
             <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
               <div className="max-w-4xl space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge label="RelayWorks Operator Dashboard" tone="bg-white/16 text-white" />
-                  <Badge label="Local-first" tone="bg-black/18 text-white" />
+                  <Badge label="Beginner-friendly workflow" tone="bg-black/18 text-white" />
                 </div>
                 <div className="space-y-3">
                   <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-                    Operate the RelayWorks AI backend without curl.
+                    Run the workflow without thinking in API terms.
                   </h1>
                   <p className="max-w-3xl text-base leading-7 text-stone-100/92 sm:text-lg">
-                    RelayWorks AI helps you run opportunity analysis, turn the top result
-                    into a launch plan, build messaging assets, discover candidate leads,
-                    import leads, generate outreach drafts, manually send them, and track
-                    follow-ups.
+                    Use the Home tab to understand what RelayWorks does, what is ready now, and
+                    which operator step should happen next.
                   </p>
                 </div>
               </div>
               <div className="rounded-[28px] border border-white/14 bg-black/14 px-5 py-4">
                 <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-stone-200">
-                  Backend URL
+                  Current Project
                 </p>
-                <p className="mt-2 text-sm font-semibold text-white">{API_BASE_URL}</p>
-                <p className="mt-2 text-sm text-stone-200">
-                  Beginner-friendly control panel for the current project.
-                </p>
+                <p className="mt-2 break-all text-sm font-semibold text-white">{PROJECT_ID}</p>
+                <p className="mt-2 text-sm text-stone-200">Backend: {API_BASE_URL}</p>
               </div>
             </div>
           </div>
           <div className="bg-white/35 px-6 py-5 sm:px-8">
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {WORKFLOW_STEPS.map((step, index) => (
-                <div
-                  key={step}
-                  className="flex min-w-max items-center gap-3 rounded-full border border-border bg-white/70 px-4 py-3"
-                >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-900 text-sm font-semibold text-stone-50">
-                    {index + 1}
-                  </span>
-                  <span className="text-sm font-semibold text-foreground">{step}</span>
-                </div>
+            <div className="flex flex-wrap gap-2">
+              {DASHBOARD_TABS.map((tab) => (
+                <TabButton
+                  key={tab.id}
+                  active={activeTab === tab.id}
+                  label={tab.label}
+                  onClick={() => setActiveTab(tab.id)}
+                />
               ))}
             </div>
           </div>
         </Card>
 
-        <section className="section-grid grid gap-6 xl:grid-cols-[1fr_1fr_1.4fr]">
-          <StatusCard
-            status={backendStatus.data}
-            loading={backendStatus.loading}
-            error={backendStatus.error}
+        {activeTab === "home" ? (
+          <div className="space-y-6">
+            <section className="section-grid grid gap-6 xl:grid-cols-[1.05fr_1fr]">
+              <HomeStartHereCard demoMode={demoMode} />
+              <NextStepCard
+                recommendation={nextStepRecommendation}
+                onOpen={openTabAndSection}
+                onRefreshBackend={() => {
+                  void backendStatus.refresh();
+                }}
+              />
+            </section>
+
+            <WorkflowChecklist states={workflowStates} />
+
+            <section className="section-grid grid gap-6 xl:grid-cols-[1fr_1fr_1.1fr]">
+              <StatusCard
+                status={backendStatus.data}
+                loading={backendStatus.loading}
+                error={backendStatus.error}
+                highlighted={highlightedSectionId === "backend-status"}
+              />
+              <HomeMetricsCard
+                candidateCount={discoveredCandidates.length}
+                leadCount={sortedLeads.length}
+                draftCount={draftRecords.length}
+                followUpCount={followUpCount}
+              />
+              <HomeOpportunityCard
+                topOpportunity={currentTopOpportunity}
+                loading={comparisonLoading}
+                error={comparisonError}
+                onOpenOpportunity={() => openTabAndSection("opportunity")}
+              />
+            </section>
+          </div>
+        ) : null}
+
+        {activeTab === "opportunity" ? (
+          <div className="space-y-6">
+            <section className="section-grid grid gap-6 xl:grid-cols-2">
+              <OpportunityAnalysisCard
+                objective={analysisObjective}
+                mode={analysisMode}
+                numOpportunities={analysisNumOpportunities}
+                loading={runningAnalysis}
+                notice={analysisNotice}
+                error={analysisError}
+                highlighted={highlightedSectionId === "find-business-ideas"}
+                onObjectiveChange={setAnalysisObjective}
+                onModeChange={setAnalysisMode}
+                onNumOpportunitiesChange={setAnalysisNumOpportunities}
+                onSubmit={handleRunOpportunityAnalysis}
+              />
+              <OpportunitySummaryCard
+                comparison={opportunityComparison}
+                loading={comparisonLoading}
+                error={comparisonError}
+                selectedMode={comparisonMode}
+                onModeChange={setComparisonMode}
+                onRefresh={() => {
+                  void refreshOpportunityComparison();
+                }}
+              />
+            </section>
+
+            <ActionCard
+              id="business-plan-generator"
+              highlighted={highlightedSectionId === "business-plan-generator"}
+              eyebrow="Opportunity"
+              title="Create Business Plan"
+              description="Turn the current top opportunity into a practical plan."
+              technicalLabel="Launch plan generation"
+              helperText="Create Business Plan: Turns the best idea into a practical plan."
+              buttonLabel="Create Business Plan"
+              loadingLabel="Creating Business Plan..."
+              loading={generatingLaunchPlan}
+              disabled={!comparisonError && (comparisonLoading || !currentTopOpportunity)}
+              notice={generationNotice}
+              error={generationError}
+              onClick={handleGenerateLaunchPlan}
+            >
+              {currentTopOpportunity ? (
+                <InfoField
+                  label="Current source"
+                  value={currentTopOpportunity.title}
+                  secondaryValue={`${humanize(currentTopOpportunity.mode)} · Run ${currentTopOpportunity.run_id}`}
+                />
+              ) : (
+                <InlineNotice tone="warning">
+                  No top opportunity found yet. Find Business Ideas first.
+                </InlineNotice>
+              )}
+            </ActionCard>
+          </div>
+        ) : null}
+
+        {activeTab === "leads" ? (
+          <div className="space-y-6">
+            <Card id="lead-finder" highlighted={highlightedSectionId === "lead-finder"} className="space-y-6">
+              <SectionHeading
+                eyebrow="Leads"
+                title="Lead Finder"
+                description="Discover possible leads, review them, or add a known lead yourself."
+              />
+              {candidateNotice ? <InlineNotice tone="success">{candidateNotice}</InlineNotice> : null}
+              {candidateActionError ? <InlineNotice tone="error">{candidateActionError}</InlineNotice> : null}
+              {candidates.error ? <DataError message={candidates.error} /> : null}
+              <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+                <form onSubmit={handleDiscoverCandidates} className="rounded-[28px] border border-border bg-white/60 p-5">
+                  <div className="space-y-4">
+                    <div>
+                      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
+                        Discovery
+                      </p>
+                      <h3 className="mt-2 text-xl font-semibold text-foreground">
+                        Discover Possible Leads
+                      </h3>
+                      <p className="mt-2 text-sm leading-6 text-muted">
+                        Suggests companies that might fit. Emails are not verified.
+                      </p>
+                    </div>
+                    <InlineNotice tone="warning">
+                      These are suggestions only. Review each one before importing it.
+                    </InlineNotice>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-semibold text-foreground">Who should RelayWorks look for?</span>
+                      <textarea
+                        value={target}
+                        onChange={(event) => setTarget(event.target.value)}
+                        rows={7}
+                        className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none ring-0 transition focus:border-emerald-500"
+                      />
+                    </label>
+                    <label className="block space-y-2">
+                      <span className="text-sm font-semibold text-foreground">How many?</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={25}
+                        value={count}
+                        onChange={(event) => setCount(Math.min(25, Math.max(1, Number(event.target.value) || 1)))}
+                        className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none ring-0 transition focus:border-emerald-500"
+                      />
+                    </label>
+                    <PrimaryButton
+                      type="submit"
+                      label="Discover Possible Leads"
+                      loadingLabel="Discovering..."
+                      loading={discovering}
+                      fullWidth
+                    />
+                  </div>
+                </form>
+
+                <div id="possible-leads" className="space-y-4 scroll-mt-28">
+                  {!candidates.data && candidates.loading ? (
+                    <p className="text-sm text-muted">Loading possible leads...</p>
+                  ) : null}
+                  {candidates.data && candidates.data.length === 0 ? (
+                    <EmptyState
+                      title="No possible leads yet"
+                      description="Run lead discovery or add a lead manually to get started."
+                    />
+                  ) : null}
+                  {candidates.data && candidates.data.length > 0
+                    ? sortedCandidates.map((candidate) => (
+                        <CandidateLeadCard
+                          key={candidate.id}
+                          candidate={candidate}
+                          busy={busyCandidateId === candidate.id}
+                          onImport={handleImportCandidate}
+                          onReject={handleRejectCandidate}
+                        />
+                      ))
+                    : null}
+                </div>
+              </div>
+            </Card>
+
+            <section className="section-grid grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+              <ManualLeadFormCard
+                form={manualLeadForm}
+                loading={creatingLead}
+                notice={manualLeadNotice}
+                error={manualLeadError}
+                fieldError={manualLeadFieldError}
+                highlighted={highlightedSectionId === "manual-lead"}
+                onChange={updateManualLeadForm}
+                onSubmit={handleCreateLead}
+              />
+              <LeadsTable
+                leads={leads.data}
+                loading={leads.loading}
+                error={leads.error}
+                notice={leadNotice}
+                actionError={leadActionError}
+                busyLeadId={busyLeadId}
+                batchLoading={creatingBatchDrafts}
+                highlightedLeadId={highlightedLeadId}
+                highlighted={highlightedSectionId === "leads-table"}
+                onRefresh={leads.refresh}
+                onCreateDraft={handleCreateDraft}
+                onCreateDraftsForNewLeads={handleCreateDraftsForNewLeads}
+              />
+            </section>
+          </div>
+        ) : null}
+
+        {activeTab === "drafts" ? (
+          <div className="space-y-4">
+            {outreachNotice ? <InlineNotice tone="success">{outreachNotice}</InlineNotice> : null}
+            {outreachActionError ? <InlineNotice tone="error">{outreachActionError}</InlineNotice> : null}
+            <OutreachBoard
+              outreach={outreach.data}
+              loading={outreach.loading}
+              error={outreach.error}
+              busyOutreachId={busyOutreachId}
+              copiedKey={copiedKey}
+              highlighted={highlightedSectionId === "drafts-board"}
+              onCopy={(copyKey, value) => {
+                void handleCopy(copyKey, value);
+              }}
+              onRefresh={outreach.refresh}
+              onMarkSent={handleMarkSent}
+            />
+          </div>
+        ) : null}
+
+        {activeTab === "followups" ? (
+          <FollowUpSection
+            followUps={followUps.data}
+            loading={followUps.loading}
+            error={followUps.error}
+            highlighted={highlightedSectionId === "follow-up-queue"}
+            onRefresh={followUps.refresh}
           />
-          <ProjectCard />
+        ) : null}
+
+        {activeTab === "assets" ? (
+          <div className="space-y-6">
+            <ActionCard
+              id="sales-materials-generator"
+              highlighted={highlightedSectionId === "sales-materials-generator"}
+              eyebrow="Assets"
+              title="Create Sales Materials"
+              description="Create the latest message and offer pack from the current Business Plan."
+              technicalLabel="Asset pack generation"
+              helperText="Create Sales Materials: Creates your pitch, email copy, LinkedIn message, and pilot offer."
+              buttonLabel="Create Sales Materials"
+              loadingLabel="Creating Sales Materials..."
+              loading={generatingAssetPack}
+              notice={assetPackNotice}
+              error={assetPackError}
+              onClick={handleGenerateAssetPack}
+            />
+
+            <section className="section-grid grid gap-6 xl:grid-cols-2">
+              <LaunchPlanCard
+                launchPlan={latestLaunchPlan}
+                loading={launchPlans.loading}
+                error={launchPlans.error}
+                highlighted={highlightedSectionId === "business-plan"}
+              />
+              <AssetPackCard
+                assetPack={latestAssetPack}
+                loading={assetPacks.loading}
+                error={assetPacks.error}
+                copiedKey={copiedKey}
+                highlighted={highlightedSectionId === "sales-materials"}
+                onCopy={(copyKey, value) => {
+                  void handleCopy(copyKey, value);
+                }}
+              />
+            </section>
+          </div>
+        ) : null}
+
+        {activeTab === "metrics" ? (
           <MetricsCard
             metrics={metrics.data}
             loading={metrics.loading}
             error={metrics.error}
             onRefresh={metrics.refresh}
           />
-        </section>
+        ) : null}
 
-        <section className="section-grid grid gap-6 xl:grid-cols-2">
-          <OpportunityAnalysisCard
-            objective={analysisObjective}
-            mode={analysisMode}
-            numOpportunities={analysisNumOpportunities}
-            loading={runningAnalysis}
-            notice={analysisNotice}
-            error={analysisError}
-            onObjectiveChange={setAnalysisObjective}
-            onModeChange={setAnalysisMode}
-            onNumOpportunitiesChange={setAnalysisNumOpportunities}
-            onSubmit={handleRunOpportunityAnalysis}
+        {activeTab === "advanced" ? (
+          <AdvancedDetailsCard
+            projectId={PROJECT_ID}
+            backendStatus={backendStatus.data}
+            latestLaunchPlan={latestLaunchPlan}
+            latestAssetPack={latestAssetPack}
+            topOpportunity={currentTopOpportunity}
+            candidateCount={sortedCandidates.length}
+            leadCount={sortedLeads.length}
+            outreachCount={sortedOutreach.length}
+            followUpCount={followUpCount}
           />
-          <OpportunitySummaryCard
-            comparison={opportunityComparison}
-            loading={comparisonLoading}
-            error={comparisonError}
-            selectedMode={comparisonMode}
-            onModeChange={setComparisonMode}
-            onRefresh={() => {
-              void refreshOpportunityComparison();
-            }}
-          />
-        </section>
-
-        <section className="section-grid grid gap-6 xl:grid-cols-2">
-          <GenerationControlCard
-            eyebrow="Launch"
-            title="Generate Launch Plan"
-            description="Use the current top opportunity to generate a fresh launch plan without writing JSON by hand."
-            buttonLabel="Generate Launch Plan"
-            loadingLabel="Generating launch plan..."
-            disabled={!comparisonError && (comparisonLoading || !currentTopOpportunity)}
-            loading={generatingLaunchPlan}
-            notice={generationNotice}
-            error={generationError}
-            onClick={handleGenerateLaunchPlan}
-          >
-            <InlineNotice tone="info">
-              Launch plans are generated from the current top opportunity.
-            </InlineNotice>
-            {currentTopOpportunity ? (
-              <div className="rounded-3xl border border-border bg-white/65 px-4 py-4">
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-                  Current source
-                </p>
-                <p className="mt-2 text-base font-semibold text-foreground">
-                  {currentTopOpportunity.title}
-                </p>
-                <p className="mt-1 text-sm text-muted">
-                  {humanize(currentTopOpportunity.mode)} · Run {currentTopOpportunity.run_id}
-                </p>
-              </div>
-            ) : (
-              <InlineNotice tone="warning">
-                No top opportunity found yet. Run opportunity analysis first.
-              </InlineNotice>
-            )}
-          </GenerationControlCard>
-          <GenerationControlCard
-            eyebrow="Assets"
-            title="Generate Asset Pack"
-            description="Use the latest launch plan to create the latest messaging package that powers outreach draft generation."
-            buttonLabel="Generate Asset Pack"
-            loadingLabel="Generating asset pack..."
-            loading={generatingAssetPack}
-            notice={assetPackNotice}
-            error={assetPackError}
-            onClick={handleGenerateAssetPack}
-          />
-        </section>
-
-        <Card className="space-y-6">
-          <SectionHeading
-            eyebrow="Candidates"
-            title="Candidate leads"
-            description="These records are discovery suggestions only. Keep the unverified label visible so operators do not confuse candidate data with confirmed contact data."
-            action={<RefreshButton label="candidate leads" onClick={candidates.refresh} disabled={candidates.loading} />}
-          />
-          {candidateNotice ? <InlineNotice tone="success">{candidateNotice}</InlineNotice> : null}
-          {candidateActionError ? <InlineNotice tone="error">{candidateActionError}</InlineNotice> : null}
-          {candidates.error ? <DataError message={candidates.error} /> : null}
-          <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-            <form onSubmit={handleDiscoverCandidates} className="rounded-[28px] border border-border bg-white/60 p-5">
-              <div className="space-y-4">
-                <div>
-                  <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">
-                    Candidate discovery
-                  </p>
-                  <h3 className="mt-2 text-xl font-semibold text-foreground">
-                    Request new candidate leads
-                  </h3>
-                </div>
-                <InlineNotice tone="warning">
-                  Candidate discovery suggests possible leads. It does not verify private emails
-                  or guarantee contact data.
-                </InlineNotice>
-                <label className="block space-y-2">
-                  <span className="text-sm font-semibold text-foreground">Target</span>
-                  <textarea
-                    value={target}
-                    onChange={(event) => setTarget(event.target.value)}
-                    rows={7}
-                    className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm leading-6 text-foreground outline-none ring-0 transition focus:border-emerald-500"
-                  />
-                </label>
-                <label className="block space-y-2">
-                  <span className="text-sm font-semibold text-foreground">Count</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={25}
-                    value={count}
-                    onChange={(event) => setCount(Number(event.target.value))}
-                    className="w-full rounded-3xl border border-border bg-white px-4 py-3 text-sm text-foreground outline-none ring-0 transition focus:border-emerald-500"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  disabled={discovering}
-                  className="w-full rounded-full bg-emerald-900 px-4 py-3 text-sm font-semibold text-emerald-50 transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {discovering ? "Discovering..." : "Discover Candidates"}
-                </button>
-              </div>
-            </form>
-
-            <div className="space-y-4">
-              {!candidates.data && candidates.loading ? (
-                <p className="text-sm text-muted">Loading candidate leads...</p>
-              ) : null}
-              {candidates.data && candidates.data.length === 0 ? (
-                <EmptyState
-                  title="No candidate leads yet"
-                  description="Run candidate discovery from the form on the left to populate this section."
-                />
-              ) : null}
-              {candidates.data && candidates.data.length > 0
-                ? sortNewestFirst(candidates.data).map((candidate) => (
-                    <CandidateLeadCard
-                      key={candidate.id}
-                      candidate={candidate}
-                      busy={busyCandidateId === candidate.id}
-                      onImport={handleImportCandidate}
-                      onReject={handleRejectCandidate}
-                    />
-                  ))
-                : null}
-            </div>
-          </div>
-        </Card>
-
-        <section className="section-grid grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <ManualLeadFormCard
-            form={manualLeadForm}
-            loading={creatingLead}
-            notice={manualLeadNotice}
-            error={manualLeadError}
-            fieldError={manualLeadFieldError}
-            onChange={updateManualLeadForm}
-            onSubmit={handleCreateLead}
-          />
-          <LeadsTable
-            leads={leads.data}
-            loading={leads.loading}
-            error={leads.error}
-            notice={leadNotice}
-            actionError={leadActionError}
-            busyLeadId={busyLeadId}
-            batchLoading={creatingBatchDrafts}
-            highlightedLeadId={highlightedLeadId}
-            onRefresh={leads.refresh}
-            onCreateDraft={handleCreateDraft}
-            onCreateDraftsForNewLeads={handleCreateDraftsForNewLeads}
-          />
-        </section>
-
-        <section className="space-y-4">
-          {outreachNotice ? <InlineNotice tone="success">{outreachNotice}</InlineNotice> : null}
-          {outreachActionError ? <InlineNotice tone="error">{outreachActionError}</InlineNotice> : null}
-          <OutreachBoard
-            outreach={outreach.data}
-            loading={outreach.loading}
-            error={outreach.error}
-            busyOutreachId={busyOutreachId}
-            onRefresh={outreach.refresh}
-            onMarkSent={handleMarkSent}
-          />
-        </section>
-
-        <FollowUpSection
-          followUps={followUps.data}
-          loading={followUps.loading}
-          error={followUps.error}
-          onRefresh={followUps.refresh}
-        />
-
-        <section className="section-grid grid gap-6 xl:grid-cols-2">
-          <AssetPackCard
-            assetPack={latestAssetPack}
-            loading={assetPacks.loading}
-            error={assetPacks.error}
-          />
-          <LaunchPlanCard
-            launchPlan={latestLaunchPlan}
-            loading={launchPlans.loading}
-            error={launchPlans.error}
-          />
-        </section>
+        ) : null}
       </div>
     </main>
   );
