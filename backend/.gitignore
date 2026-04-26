@@ -1,5 +1,7 @@
 .env
+.env.save
 __pycache__/
 .pytest_cache/
 .venv/
 *.pyc
+data/backups/
